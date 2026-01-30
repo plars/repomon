@@ -139,10 +139,11 @@ func (m *Monitor) getRepoCommits(ctx context.Context, repo config.Repo) ([]Commi
 			return fmt.Errorf("stop iteration") // Stop iteration
 		}
 
-		// Only include commit message (not hash by default as per requirements)
+		// Only include one-line commit message
+		message := getOneLineCommitMessage(c.Message)
 		commits = append(commits, Commit{
 			Hash:      c.Hash.String(),
-			Message:   strings.TrimSpace(c.Message),
+			Message:   message,
 			Timestamp: c.Author.When,
 		})
 
@@ -155,6 +156,20 @@ func (m *Monitor) getRepoCommits(ctx context.Context, repo config.Repo) ([]Commi
 	}
 
 	return commits, nil
+}
+
+// getOneLineCommitMessage extracts the first line of a commit message (like git log --oneline)
+func getOneLineCommitMessage(message string) string {
+	// Split by newlines and take the first non-empty line
+	lines := strings.Split(message, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			return line
+		}
+	}
+	// Fallback to full message if no lines found
+	return strings.TrimSpace(message)
 }
 
 // cloneRemoteRepo performs a shallow clone of a remote repository
