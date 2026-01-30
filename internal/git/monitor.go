@@ -43,13 +43,14 @@ func NewMonitor(cfg *config.Config) *Monitor {
 
 // GetRecentCommits retrieves recent commits from all configured repositories
 func (m *Monitor) GetRecentCommits(ctx context.Context) ([]RepoResult, error) {
-	results := make([]RepoResult, len(m.config.Repos))
+	repos := m.config.GetRepos()
+	results := make([]RepoResult, len(repos))
 	var wg sync.WaitGroup
 
 	// Use a semaphore to limit concurrent goroutines
 	sem := make(chan struct{}, 10) // Limit to 10 concurrent operations
 
-	for i, repo := range m.config.Repos {
+	for i, repo := range repos {
 		wg.Add(1)
 		go func(index int, repo config.Repo) {
 			defer wg.Done()

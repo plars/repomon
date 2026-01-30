@@ -31,12 +31,9 @@ func TestMonitor_GetRecentCommits(t *testing.T) {
 		t.Fatalf("Failed to initialize test repo: %v", err)
 	}
 
-	// Create test config
 	cfg := &config.Config{
 		Defaults: config.Defaults{Days: 7},
-		Repos: []config.Repo{
-			{Name: "test-repo", Path: repoPath},
-		},
+		Repos:    []string{repoPath},
 	}
 
 	monitor := NewMonitor(cfg)

@@ -7,25 +7,17 @@ import (
 )
 
 func TestLoad(t *testing.T) {
-	// Create a temporary directory for test config files
 	tempDir, err := os.MkdirTemp("", "repomon-test")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tempDir)
 
-	// Test case 1: Valid config file
 	validConfig := `
+repos = ["/path/to/repo1", "/path/to/repo2"]
+
 [defaults]
 days = 7
-
-[[repos]]
-name = "test-repo-1"
-path = "/path/to/repo1"
-
-[[repos]]
-name = "test-repo-2"
-path = "/path/to/repo2"
 `
 	validConfigPath := filepath.Join(tempDir, "valid.toml")
 	if err := os.WriteFile(validConfigPath, []byte(validConfig), 0644); err != nil {
@@ -45,16 +37,20 @@ path = "/path/to/repo2"
 		t.Errorf("Expected 2 repos, got %d", len(cfg.Repos))
 	}
 
-	if cfg.Repos[0].Name != "test-repo-1" {
-		t.Errorf("Expected repo name 'test-repo-1', got '%s'", cfg.Repos[0].Name)
+	repos := cfg.GetRepos()
+	if len(repos) != 2 {
+		t.Errorf("Expected 2 parsed repos, got %d", len(repos))
 	}
 
-	// Test case 2: Config file without defaults (should use default days)
-	noDefaultsConfig := `
-[[repos]]
-name = "test-repo"
-path = "/path/to/repo"
-`
+	if repos[0].Name != "repo1" {
+		t.Errorf("Expected repo name 'repo1', got '%s'", repos[0].Name)
+	}
+
+	if repos[0].Path != "/path/to/repo1" {
+		t.Errorf("Expected repo path '/path/to/repo1', got '%s'", repos[0].Path)
+	}
+
+	noDefaultsConfig := `repos = ["/path/to/repo"]`
 	noDefaultsConfigPath := filepath.Join(tempDir, "no-defaults.toml")
 	if err := os.WriteFile(noDefaultsConfigPath, []byte(noDefaultsConfig), 0644); err != nil {
 		t.Fatalf("Failed to write no-defaults config: %v", err)
@@ -69,13 +65,11 @@ path = "/path/to/repo"
 		t.Errorf("Expected default days=1, got %d", cfg.Defaults.Days)
 	}
 
-	// Test case 3: Non-existent config file
 	_, err = Load(filepath.Join(tempDir, "non-existent.toml"))
 	if err == nil {
 		t.Error("Expected error for non-existent config file")
 	}
 
-	// Test case 4: Invalid TOML
 	invalidTOMLPath := filepath.Join(tempDir, "invalid.toml")
 	if err := os.WriteFile(invalidTOMLPath, []byte("invalid toml ["), 0644); err != nil {
 		t.Fatalf("Failed to write invalid TOML: %v", err)
@@ -88,16 +82,120 @@ path = "/path/to/repo"
 }
 
 func TestLoadDefaultPath(t *testing.T) {
-	// Test loading with empty config path (should use default)
-	// This will likely fail unless the user has a config file, which is expected
 	cfg, err := Load("")
 	if err == nil {
-		// If it succeeds, verify it's a valid config
 		if cfg.Defaults.Days <= 0 {
 			t.Error("Default days should be positive")
 		}
 	} else {
-		// Expected to fail in most test environments
 		t.Logf("Expected failure for default config path: %v", err)
+	}
+}
+
+func TestParseRepoString(t *testing.T) {
+	tests := []struct {
+		name    string
+		repoStr string
+		want    Repo
+		wantErr bool
+	}{
+		{
+			name:    "local path",
+			repoStr: "/home/user/projects/my-project",
+			want:    Repo{Name: "my-project", Path: "/home/user/projects/my-project"},
+			wantErr: false,
+		},
+		{
+			name:    "HTTPS GitHub URL",
+			repoStr: "https://github.com/go-git/go-git",
+			want:    Repo{Name: "go-git", URL: "https://github.com/go-git/go-git"},
+			wantErr: false,
+		},
+		{
+			name:    "HTTPS URL with .git",
+			repoStr: "https://github.com/kubernetes/kubernetes.git",
+			want:    Repo{Name: "kubernetes", URL: "https://github.com/kubernetes/kubernetes.git"},
+			wantErr: false,
+		},
+		{
+			name:    "SSH GitHub URL",
+			repoStr: "git@github.com:plars/repomon.git",
+			want:    Repo{Name: "repomon", URL: "git@github.com:plars/repomon.git"},
+			wantErr: false,
+		},
+		{
+			name:    "GitLab URL",
+			repoStr: "https://gitlab.com/company/project.git",
+			want:    Repo{Name: "project", URL: "https://gitlab.com/company/project.git"},
+			wantErr: false,
+		},
+		{
+			name:    "path with tilde",
+			repoStr: "~/projects/work-app",
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseRepoString(tt.repoStr)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseRepoString() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if tt.name == "path with tilde" {
+				home, _ := os.UserHomeDir()
+				expectedPath := filepath.Join(home, "projects/work-app")
+				if got.Name != "work-app" || got.Path != expectedPath {
+					t.Errorf("parseRepoString() = %+v, want Name=work-app, Path=%s", got, expectedPath)
+				}
+				return
+			}
+
+			if got.Name != tt.want.Name {
+				t.Errorf("parseRepoString().Name = %v, want %v", got.Name, tt.want.Name)
+			}
+			if got.Path != tt.want.Path {
+				t.Errorf("parseRepoString().Path = %v, want %v", got.Path, tt.want.Path)
+			}
+			if got.URL != tt.want.URL {
+				t.Errorf("parseRepoString().URL = %v, want %v", got.URL, tt.want.URL)
+			}
+		})
+	}
+}
+
+func TestGetRepos(t *testing.T) {
+	cfg := &Config{
+		Defaults: Defaults{Days: 7},
+		Repos: []string{
+			"/home/user/projects/my-project",
+			"https://github.com/go-git/go-git",
+			"git@github.com:plars/repomon.git",
+			"~/projects/work-app",
+		},
+	}
+
+	repos := cfg.GetRepos()
+
+	if len(repos) != 4 {
+		t.Fatalf("Expected 4 repos, got %d", len(repos))
+	}
+
+	if repos[0].Name != "my-project" || repos[0].Path != "/home/user/projects/my-project" {
+		t.Errorf("Repo 0 incorrect: %+v", repos[0])
+	}
+
+	if repos[1].Name != "go-git" || repos[1].URL != "https://github.com/go-git/go-git" {
+		t.Errorf("Repo 1 incorrect: %+v", repos[1])
+	}
+
+	if repos[2].Name != "repomon" || repos[2].URL != "git@github.com:plars/repomon.git" {
+		t.Errorf("Repo 2 incorrect: %+v", repos[2])
+	}
+
+	if repos[3].Name != "work-app" {
+		t.Errorf("Repo 3 name incorrect: %+v", repos[3])
 	}
 }

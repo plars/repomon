@@ -22,16 +22,13 @@ go install github.com/plars/repomon/cmd/repomon@latest
 ```bash
 mkdir -p ~/.config/repomon
 cat > ~/.config/repomon/config.toml << 'EOF'
+repos = [
+    "/home/user/projects/my-project",
+    "https://github.com/kubernetes/kubernetes",
+]
+
 [defaults]
 days = 7
-
-[[repos]]
-name = "my-project"
-path = "/home/user/projects/my-project"
-
-[[repos]]
-name = "kubernetes"
-url = "https://github.com/kubernetes/kubernetes"
 EOF
 ```
 
@@ -52,51 +49,30 @@ repomon -d 3
 
 Configuration is done via TOML file. Use `~/.config/repomon/config.toml` or specify with `-c` flag.
 
-### Repository Types
+Repository names are automatically extracted from paths/URLs. No manual naming required.
 
-**Local Repositories:**
-```toml
-[[repos]]
-name = "local-project"
-path = "/home/user/projects/local-project"
-```
-
-**Remote Repositories (HTTPS):**
-```toml
-[[repos]]
-name = "public-repo"
-url = "https://github.com/user/repo"
-```
-
-**Remote Repositories (SSH):**
-```toml
-[[repos]]
-name = "private-repo"
-url = "git@github.com:user/private-repo.git"
-```
-
-### Full Example
+### Format
 
 ```toml
+repos = [
+    "/home/user/projects/my-project",           # Local - auto-named "my-project"
+    "https://github.com/go-git/go-git",        # Remote - auto-named "go-git"
+    "git@github.com:plars/repomon.git",      # Remote SSH - auto-named "repomon"
+    "~/projects/work-app",                     # Local with ~ - auto-named "work-app"
+    "https://gitlab.com/company/project.git",   # Remote GitLab - auto-named "project"
+]
+
 [defaults]
 days = 7  # Number of days to look back
-
-[[repos]]
-name = "local-work"
-path = "/home/user/work/projects/webapp"
-
-[[repos]]
-name = "go-git"
-url = "https://github.com/go-git/go-git"
-
-[[repos]]
-name = "company-private"
-url = "git@github.com:company/internal-repo.git"
-
-[[repos]]
-name = "gitlab-project"
-url = "https://gitlab.com/company/project.git"
 ```
+
+### Auto-Naming Rules
+
+- **Local paths**: Uses the final directory name (e.g., `/home/user/projects/my-app` → "my-app")
+- **HTTPS URLs**: Uses the repo name (e.g., `https://github.com/user/repo` → "repo")
+- **SSH URLs**: Uses the repo name after colon (e.g., `git@github.com:user/repo` → "repo")
+- **Trailing .git**: Automatically removed (e.g., `repo.git` → "repo")
+- **Tilde expansion**: `~` expands to your home directory
 
 ## Usage
 
