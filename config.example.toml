@@ -1,0 +1,27 @@
+# Sample configuration file for repomon
+# Place this at ~/.config/repomon/config.toml or specify with -c flag
+
+[defaults]
+days = 7  # Number of days to look back in history
+
+[[repos]]
+name = "my-project"
+path = "/home/user/projects/my-project"
+
+[[repos]]
+name = "another-repo"
+path = "/home/user/code/another-repo"
+
+[[repos]]
+name = "go-git"
+url = "https://github.com/go-git/go-git"
+
+[[repos]]
+name = "kubernetes"
+url = "https://github.com/kubernetes/kubernetes"
+
+[[repos]]
+name = "work-remote"
+url = "git@github.com:company/private-repo.git"
+
+# Remote repos use shallow cloning to minimize bandwidth - only commit history is fetched
