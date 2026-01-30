@@ -11,8 +11,8 @@ import (
 
 // Config represents the application configuration
 type Config struct {
-	Defaults Defaults   `toml:"defaults"`
-	Repos    []Repo     `toml:"repos"`
+	Defaults Defaults `toml:"defaults"`
+	Repos    []Repo   `toml:"repos"`
 }
 
 // Defaults contains default configuration values

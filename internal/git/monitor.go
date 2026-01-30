@@ -53,7 +53,7 @@ func (m *Monitor) GetRecentCommits(ctx context.Context) ([]RepoResult, error) {
 		wg.Add(1)
 		go func(index int, repo config.Repo) {
 			defer wg.Done()
-			sem <- struct{}{} // Acquire
+			sem <- struct{}{}        // Acquire
 			defer func() { <-sem }() // Release
 
 			result := RepoResult{Repo: repo}
@@ -63,15 +63,15 @@ func (m *Monitor) GetRecentCommits(ctx context.Context) ([]RepoResult, error) {
 				if repo.URL != "" {
 					location = repo.URL
 				}
-				slog.Warn("Failed to get commits for repository", 
-					"repo", repo.Name, 
-					"location", location, 
+				slog.Warn("Failed to get commits for repository",
+					"repo", repo.Name,
+					"location", location,
 					"error", err)
 				result.Error = err
 			} else {
 				result.Commits = commits
-				slog.Info("Retrieved commits for repository", 
-					"repo", repo.Name, 
+				slog.Info("Retrieved commits for repository",
+					"repo", repo.Name,
 					"commits", len(commits))
 			}
 			results[index] = result
@@ -179,9 +179,9 @@ func (m *Monitor) cloneRemoteRepo(ctx context.Context, url string) (*git.Reposit
 
 	// Perform clone with reasonable depth limit for efficiency
 	repo, err := git.CloneContext(ctx, storage, nil, &git.CloneOptions{
-		URL:      url,
-		Depth:    100, // Reasonable depth limit while still being efficient
-		Tags:    git.NoTags, // Don't fetch tags to save bandwidth
+		URL:   url,
+		Depth: 100,        // Reasonable depth limit while still being efficient
+		Tags:  git.NoTags, // Don't fetch tags to save bandwidth
 	})
 	if err != nil {
 		slog.Debug("Failed to clone remote repository", "error", err, "url", url)
