@@ -57,6 +57,6 @@ func Load(configFile string) (*Config, error) {
 		cfg.Defaults.Days = 1
 	}
 
-	slog.Info("Configuration loaded successfully", "file", configFile, "repos", len(cfg.Repos))
+	slog.Debug("Configuration loaded successfully", "file", configFile, "repos", len(cfg.Repos))
 	return &cfg, nil
 }

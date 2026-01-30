@@ -33,6 +33,12 @@ showing the most recent commits to each repository in an easy-to-read format.`,
 				cfg.Defaults.Days = days
 			}
 
+			// Configure debug logging if debug flag is set
+			debugEnabled, _ := cmd.Flags().GetBool("debug")
+			if debugEnabled {
+				slog.SetLogLoggerLevel(slog.LevelDebug)
+			}
+
 			// Monitor repositories
 			monitor := git.NewMonitor(cfg)
 			results, err := monitor.GetRecentCommits(cmd.Context())
@@ -56,6 +62,7 @@ showing the most recent commits to each repository in an easy-to-read format.`,
 	// Set up flags
 	rootCmd.Flags().StringVarP(&configFile, "config", "c", "", "path to config file (default ~/.config/repomon/config.toml)")
 	rootCmd.Flags().IntVarP(&days, "days", "d", 1, "number of days to look back in history")
+	rootCmd.Flags().Bool("debug", false, "enable debug logging")
 
 	if err := rootCmd.Execute(); err != nil {
 		slog.Error("Command execution failed", "error", err)

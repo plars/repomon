@@ -63,14 +63,14 @@ func (m *Monitor) GetRecentCommits(ctx context.Context) ([]RepoResult, error) {
 				if repo.URL != "" {
 					location = repo.URL
 				}
-				slog.Warn("Failed to get commits for repository",
+				slog.Debug("Failed to get commits for repository",
 					"repo", repo.Name,
 					"location", location,
 					"error", err)
 				result.Error = err
 			} else {
 				result.Commits = commits
-				slog.Info("Retrieved commits for repository",
+				slog.Debug("Retrieved commits for repository",
 					"repo", repo.Name,
 					"commits", len(commits))
 			}
