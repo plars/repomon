@@ -12,6 +12,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/plars/repomon/internal/config"
+	"github.com/schollz/progressbar/v3"
 	"log/slog"
 )
 
@@ -50,10 +51,18 @@ func (m *Monitor) GetRecentCommits(ctx context.Context) ([]RepoResult, error) {
 	// Use a semaphore to limit concurrent goroutines
 	sem := make(chan struct{}, 10) // Limit to 10 concurrent operations
 
+	bar := progressbar.NewOptions(len(repos),
+		progressbar.OptionSetDescription("Fetching commits"),
+		progressbar.OptionShowCount(),
+		progressbar.OptionSetWriter(os.Stderr),
+	)
+
 	for i, repo := range repos {
 		wg.Add(1)
 		go func(index int, repo config.Repo) {
 			defer wg.Done()
+			defer bar.Add(1)
+
 			sem <- struct{}{}        // Acquire
 			defer func() { <-sem }() // Release
 
@@ -80,6 +89,7 @@ func (m *Monitor) GetRecentCommits(ctx context.Context) ([]RepoResult, error) {
 	}
 
 	wg.Wait()
+	bar.Finish()
 	return results, nil
 }
 
