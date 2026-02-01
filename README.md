@@ -1,4 +1,4 @@
-# Repomon
+# 🛻 Repomon
 
 A fast tool to monitor multiple git repositories and report recent commits. Supports both local repositories and remote repositories via HTTPS or SSH, using shallow cloning and concurrency.
 
@@ -15,7 +15,7 @@ go build -o repomon ./cmd/repomon
 go install github.com/plars/repomon/cmd/repomon@latest
 ```
 
-## Quick Start
+## ⚡ Quick Start
 
 1. **Create Configuration:**
 
@@ -45,7 +45,7 @@ repomon -c /path/to/config.toml
 repomon -d 3
 ```
 
-## Configuration
+## ⚙ Configuration
 
 Configuration is done via TOML file. Use `~/.config/repomon/config.toml` or specify with `-c` flag.
 
@@ -74,7 +74,7 @@ days = 7  # Number of days to look back
 - **Trailing .git**: Automatically removed (e.g., `repo.git` → "repo")
 - **Tilde expansion**: `~` expands to your home directory
 
-## Usage
+## 📖 Usage
 
 ```bash
 # Basic usage
@@ -96,7 +96,7 @@ repomon -c /custom/config.toml -d 30
 - `-d, --days`: Number of days to look back (default: 1)
 - `--debug`: Enable debug logging
 
-## Output Example
+## 🖵 Output Example
 
 ```
 Repository Monitor Report
@@ -120,7 +120,7 @@ Repository Monitor Report
    ❌ Error: authentication required
 ```
 
-## How It Works
+## 🛠️ How It Works
 
 ### Local Repositories
 - Directly opens existing git repository
@@ -134,6 +134,6 @@ Repository Monitor Report
 - **No file checkout** - we only need commit metadata
 
 
-## License
+## 📄 License
 
 MIT License - see LICENSE file for details.
