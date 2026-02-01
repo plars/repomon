@@ -20,6 +20,7 @@ import (
 type Commit struct {
 	Hash      string
 	Message   string
+	Author    string
 	Timestamp time.Time
 }
 
@@ -147,14 +148,14 @@ func (m *Monitor) getRepoCommits(ctx context.Context, repo config.Repo) ([]Commi
 	err = commitIter.ForEach(func(c *object.Commit) error {
 		// Check if we've reached the cutoff date
 		if c.Author.When.Before(cutoff) {
-			return fmt.Errorf("stop iteration") // Stop iteration
+			return fmt.Errorf("stop iteration")
 		}
 
-		// Only include one-line commit message
 		message := getOneLineCommitMessage(c.Message)
 		commits = append(commits, Commit{
 			Hash:      c.Hash.String(),
 			Message:   message,
+			Author:    c.Author.Name,
 			Timestamp: c.Author.When,
 		})
 

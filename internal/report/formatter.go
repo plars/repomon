@@ -45,9 +45,8 @@ func (f *Formatter) Format(results []git.RepoResult) (string, error) {
 		sb.WriteString("   Recent commits:\n")
 
 		for _, commit := range result.Commits {
-			// Format timestamp relative to now
 			timeStr := f.formatRelativeTime(commit.Timestamp)
-			sb.WriteString(fmt.Sprintf("   • %s (%s)\n", commit.Message, timeStr))
+			sb.WriteString(fmt.Sprintf("   • %s - %s (%s)\n", commit.Message, commit.Author, timeStr))
 		}
 		sb.WriteString("\n")
 	}
