@@ -22,21 +22,35 @@ go install github.com/plars/repomon/cmd/repomon@latest
 ```bash
 mkdir -p ~/.config/repomon
 cat > ~/.config/repomon/config.toml << 'EOF'
+[defaults]
+days = 7
+
+[groups.default]
 repos = [
     "/home/user/projects/my-project",
     "https://github.com/kubernetes/kubernetes",
 ]
 
-[defaults]
-days = 7
+[groups.work]
+repos = [
+    "https://github.com/go-git/go-git",
+]
+
+[groups.personal]
+repos = [
+    "~/projects/dotfiles",
+]
 EOF
 ```
 
 2. **Run Report:**
 
 ```bash
-# Using default config
+# Using default group
 repomon
+
+# Specify a group
+repomon -g work
 
 # Custom config file
 repomon -c /path/to/config.toml
@@ -54,6 +68,10 @@ Repository names are automatically extracted from paths/URLs. No manual naming r
 ### Format
 
 ```toml
+[defaults]
+days = 7  # Number of days to look back
+
+[groups.default]
 repos = [
     "/home/user/projects/my-project",           # Local - auto-named "my-project"
     "https://github.com/go-git/go-git",        # Remote - auto-named "go-git"
@@ -62,8 +80,17 @@ repos = [
     "https://gitlab.com/company/project.git",   # Remote GitLab - auto-named "project"
 ]
 
-[defaults]
-days = 7  # Number of days to look back
+[groups.work]
+repos = [
+    "https://github.com/company/backend",
+    "https://github.com/company/frontend",
+]
+
+[groups.personal]
+repos = [
+    "~/projects/dotfiles",
+    "https://github.com/user/hobby-project",
+]
 ```
 
 ### Auto-Naming Rules
@@ -77,8 +104,12 @@ days = 7  # Number of days to look back
 ## 📖 Usage
 
 ```bash
-# Basic usage
+# Basic usage (uses 'default' group)
 repomon
+
+# Specify a group
+repomon -g work
+repomon --group personal
 
 # Specify config file
 repomon -c ~/.config/repomon/config.toml
@@ -87,13 +118,14 @@ repomon -c ~/.config/repomon/config.toml
 repomon -d 14
 
 # Combine options
-repomon -c /custom/config.toml -d 30
+repomon -c /custom/config.toml -g work -d 30
 ```
 
 ### CLI Options
 
 - `-c, --config`: Path to configuration file (default: `~/.config/repomon/config.toml`)
 - `-d, --days`: Number of days to look back (default: 1)
+- `-g, --group`: Repository group to use (default: 'default')
 - `--debug`: Enable debug logging
 
 ## 🖵 Output Example

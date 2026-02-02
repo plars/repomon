@@ -26,17 +26,12 @@ func TestMonitor_GetRecentCommits(t *testing.T) {
 		t.Fatalf("Failed to create repo dir: %v", err)
 	}
 
-	// Initialize git repo
 	if err := initTestRepo(repoPath); err != nil {
 		t.Fatalf("Failed to initialize test repo: %v", err)
 	}
 
-	cfg := &config.Config{
-		Defaults: config.Defaults{Days: 7},
-		Repos:    []string{repoPath},
-	}
-
-	monitor := NewMonitor(cfg)
+	repos := []config.Repo{{Name: "test-repo", Path: repoPath}}
+	monitor := NewMonitorWithRepos(repos)
 	results, err := monitor.GetRecentCommits(context.Background())
 	if err != nil {
 		t.Fatalf("Failed to get recent commits: %v", err)
@@ -68,11 +63,7 @@ func TestMonitor_getRepoCommits(t *testing.T) {
 		t.Fatalf("Failed to create repo dir: %v", err)
 	}
 
-	cfg := &config.Config{
-		Defaults: config.Defaults{Days: 7},
-	}
-
-	monitor := NewMonitor(cfg)
+	monitor := NewMonitorWithRepos([]config.Repo{})
 	repo := config.Repo{Name: "test-repo", Path: repoPath}
 
 	// Test with non-existent path
@@ -110,11 +101,7 @@ func TestMonitor_getRepoCommits_NotGitRepo(t *testing.T) {
 		t.Fatalf("Failed to create dir: %v", err)
 	}
 
-	cfg := &config.Config{
-		Defaults: config.Defaults{Days: 7},
-	}
-
-	monitor := NewMonitor(cfg)
+	monitor := NewMonitorWithRepos([]config.Repo{})
 	repo := config.Repo{Name: "not-git-repo", Path: repoPath}
 
 	_, err = monitor.getRepoCommits(context.Background(), repo)
@@ -124,11 +111,7 @@ func TestMonitor_getRepoCommits_NotGitRepo(t *testing.T) {
 }
 
 func TestMonitor_parseGitLog(t *testing.T) {
-	cfg := &config.Config{
-		Defaults: config.Defaults{Days: 7},
-	}
-
-	monitor := NewMonitor(cfg)
+	monitor := NewMonitorWithRepos([]config.Repo{})
 
 	// Test that parseGitLog is deprecated
 	_, err := monitor.parseGitLog([]byte(""))

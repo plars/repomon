@@ -13,16 +13,18 @@ import (
 
 // Config represents the application configuration
 type Config struct {
-	Defaults Defaults `toml:"defaults"`
-	Repos    []string `toml:"repos"`
+	Defaults Defaults          `toml:"defaults"`
+	Groups   map[string]*Group `toml:"groups"`
 }
 
-// Defaults contains default configuration values
+type Group struct {
+	Repos []string `toml:"repos"`
+}
+
 type Defaults struct {
 	Days int `toml:"days"`
 }
 
-// Repo represents a repository configuration
 type Repo struct {
 	Name string `toml:"name"`
 	Path string `toml:"path,omitempty"`
@@ -127,11 +129,19 @@ func extractNameFromPath(path string) string {
 	return base
 }
 
-// GetRepos parses and returns the repositories as Repo structs
-func (c *Config) GetRepos() []Repo {
-	repos := make([]Repo, 0, len(c.Repos))
+func (c *Config) GetRepos(groupName string) []Repo {
+	group, ok := c.Groups[groupName]
+	if !ok {
+		slog.Warn("Group not found, using 'default' group", "requested", groupName)
+		group = c.Groups["default"]
+		if group == nil {
+			slog.Error("No default group found in configuration")
+			return []Repo{}
+		}
+	}
 
-	for _, repoStr := range c.Repos {
+	repos := make([]Repo, 0, len(group.Repos))
+	for _, repoStr := range group.Repos {
 		repo, err := parseRepoString(repoStr)
 		if err != nil {
 			slog.Warn("Failed to parse repository string", "string", repoStr, "error", err)
@@ -173,6 +183,6 @@ func Load(configFile string) (*Config, error) {
 		cfg.Defaults.Days = 1
 	}
 
-	slog.Debug("Configuration loaded successfully", "file", configFile, "repos", len(cfg.Repos))
+	slog.Debug("Configuration loaded successfully", "file", configFile, "groups", len(cfg.Groups))
 	return &cfg, nil
 }

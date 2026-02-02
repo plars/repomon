@@ -31,34 +31,40 @@ type RepoResult struct {
 	Error   error
 }
 
-// Monitor handles git repository monitoring
 type Monitor struct {
-	config *config.Config
+	repos []config.Repo
+	days  int
 }
 
-// NewMonitor creates a new git monitor
 func NewMonitor(cfg *config.Config) *Monitor {
+	return NewMonitorWithRepos(cfg.GetRepos("default"))
+}
+
+func NewMonitorWithRepos(repos []config.Repo) *Monitor {
 	return &Monitor{
-		config: cfg,
+		repos: repos,
+		days:  1,
 	}
 }
 
-// GetRecentCommits retrieves recent commits from all configured repositories
+func (m *Monitor) SetDays(days int) {
+	m.days = days
+}
+
 func (m *Monitor) GetRecentCommits(ctx context.Context) ([]RepoResult, error) {
-	repos := m.config.GetRepos()
-	results := make([]RepoResult, len(repos))
+	results := make([]RepoResult, len(m.repos))
 	var wg sync.WaitGroup
 
 	// Use a semaphore to limit concurrent goroutines
 	sem := make(chan struct{}, 10) // Limit to 10 concurrent operations
 
-	bar := progressbar.NewOptions(len(repos),
+	bar := progressbar.NewOptions(len(m.repos),
 		progressbar.OptionSetDescription("Fetching commits"),
 		progressbar.OptionShowCount(),
 		progressbar.OptionSetWriter(os.Stderr),
 	)
 
-	for i, repo := range repos {
+	for i, repo := range m.repos {
 		wg.Add(1)
 		go func(index int, repo config.Repo) {
 			defer wg.Done()
@@ -141,8 +147,7 @@ func (m *Monitor) getRepoCommits(ctx context.Context, repo config.Repo) ([]Commi
 	}
 	defer commitIter.Close()
 
-	// Calculate the cutoff date
-	cutoff := time.Now().AddDate(0, 0, -m.config.Defaults.Days)
+	cutoff := time.Now().AddDate(0, 0, -m.days)
 
 	var commits []Commit
 	err = commitIter.ForEach(func(c *object.Commit) error {

@@ -14,6 +14,7 @@ func TestLoad(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	validConfig := `
+[groups.default]
 repos = ["/path/to/repo1", "/path/to/repo2"]
 
 [defaults]
@@ -33,11 +34,7 @@ days = 7
 		t.Errorf("Expected days=7, got %d", cfg.Defaults.Days)
 	}
 
-	if len(cfg.Repos) != 2 {
-		t.Errorf("Expected 2 repos, got %d", len(cfg.Repos))
-	}
-
-	repos := cfg.GetRepos()
+	repos := cfg.GetRepos("default")
 	if len(repos) != 2 {
 		t.Errorf("Expected 2 parsed repos, got %d", len(repos))
 	}
@@ -50,7 +47,10 @@ days = 7
 		t.Errorf("Expected repo path '/path/to/repo1', got '%s'", repos[0].Path)
 	}
 
-	noDefaultsConfig := `repos = ["/path/to/repo"]`
+	noDefaultsConfig := `
+[groups.default]
+repos = ["/path/to/repo"]
+`
 	noDefaultsConfigPath := filepath.Join(tempDir, "no-defaults.toml")
 	if err := os.WriteFile(noDefaultsConfigPath, []byte(noDefaultsConfig), 0644); err != nil {
 		t.Fatalf("Failed to write no-defaults config: %v", err)
@@ -169,15 +169,19 @@ func TestParseRepoString(t *testing.T) {
 func TestGetRepos(t *testing.T) {
 	cfg := &Config{
 		Defaults: Defaults{Days: 7},
-		Repos: []string{
-			"/home/user/projects/my-project",
-			"https://github.com/go-git/go-git",
-			"git@github.com:plars/repomon.git",
-			"~/projects/work-app",
+		Groups: map[string]*Group{
+			"default": {
+				Repos: []string{
+					"/home/user/projects/my-project",
+					"https://github.com/go-git/go-git",
+					"git@github.com:plars/repomon.git",
+					"~/projects/work-app",
+				},
+			},
 		},
 	}
 
-	repos := cfg.GetRepos()
+	repos := cfg.GetRepos("default")
 
 	if len(repos) != 4 {
 		t.Fatalf("Expected 4 repos, got %d", len(repos))
