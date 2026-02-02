@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/plars/repomon/internal/config"
 	"github.com/schollz/progressbar/v3"
 	"log/slog"
@@ -104,13 +104,18 @@ func (m *Monitor) GetRecentCommits(ctx context.Context) ([]RepoResult, error) {
 func (m *Monitor) getRepoCommits(ctx context.Context, repo config.Repo) ([]Commit, error) {
 	var gitRepo *git.Repository
 	var err error
+	var tempDir string
 
 	// Determine if this is a remote or local repository
 	if repo.URL != "" {
-		// Remote repository - use shallow clone with memory storage
-		gitRepo, err = m.cloneRemoteRepo(ctx, repo.URL)
+		// Remote repository - use git binary for cloning (supports credential helpers)
+		gitRepo, tempDir, err = m.cloneRemoteRepo(ctx, repo.URL)
 		if err != nil {
 			return nil, fmt.Errorf("failed to clone remote repository: %w", err)
+		}
+		// Clean up temp directory when done reading commits
+		if tempDir != "" {
+			defer os.RemoveAll(tempDir)
 		}
 	} else if repo.Path != "" {
 		// Local repository - check if path exists
@@ -189,24 +194,31 @@ func getOneLineCommitMessage(message string) string {
 	return strings.TrimSpace(message)
 }
 
-// cloneRemoteRepo performs a shallow clone of a remote repository
-func (m *Monitor) cloneRemoteRepo(ctx context.Context, url string) (*git.Repository, error) {
-	// Use memory storage to avoid writing to disk
-	storage := memory.NewStorage()
-
-	// Perform clone with reasonable depth limit for efficiency
-	repo, err := git.CloneContext(ctx, storage, nil, &git.CloneOptions{
-		URL:   url,
-		Depth: 100,        // Reasonable depth limit while still being efficient
-		Tags:  git.NoTags, // Don't fetch tags to save bandwidth
-	})
+// cloneRemoteRepo performs a shallow clone using git binary for credential helper support
+func (m *Monitor) cloneRemoteRepo(ctx context.Context, repoURL string) (*git.Repository, string, error) {
+	tempDir, err := os.MkdirTemp("", "repomon-*")
 	if err != nil {
-		slog.Debug("Failed to clone remote repository", "error", err, "url", url)
-		return nil, fmt.Errorf("failed to clone remote repository: %w", err)
+		return nil, "", fmt.Errorf("failed to create temp directory: %w", err)
 	}
 
-	slog.Debug("Successfully cloned remote repository", "url", url)
-	return repo, nil
+	args := []string{"clone", repoURL, tempDir, "--depth", "100", "--no-tags"}
+	cmd := exec.CommandContext(ctx, "git", args...)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		os.RemoveAll(tempDir)
+		slog.Debug("Failed to clone remote repository", "error", err, "url", repoURL, "output", string(output))
+		return nil, "", fmt.Errorf("git clone failed: %w", err)
+	}
+
+	gitRepo, err := git.PlainOpen(tempDir)
+	if err != nil {
+		os.RemoveAll(tempDir)
+		return nil, "", fmt.Errorf("failed to open cloned repository: %w", err)
+	}
+
+	slog.Debug("Successfully cloned remote repository", "url", repoURL, "tempDir", tempDir)
+	return gitRepo, tempDir, nil
 }
 
 // parseGitLog is no longer needed with go-git, but kept for backwards compatibility
