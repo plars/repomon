@@ -21,6 +21,14 @@ func main() {
 		Short: "A tool to monitor git repositories and report recent changes",
 		Long: `Repomon monitors configured git repositories and generates a report
 showing the most recent commits to each repository in an easy-to-read format.`,
+	}
+
+	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "", "path to config file (default ~/.config/repomon/config.toml)")
+	rootCmd.PersistentFlags().StringVarP(&group, "group", "g", "", "repository group to use (default: 'default')")
+
+	var runCmd = &cobra.Command{
+		Use:   "run",
+		Short: "Monitors configured git repositories and reports recent changes",
 		Run: func(cmd *cobra.Command, args []string) {
 			cfg, err := config.Load(configFile)
 			if err != nil {
@@ -62,11 +70,46 @@ showing the most recent commits to each repository in an easy-to-read format.`,
 			fmt.Print(output)
 		},
 	}
+	runCmd.Flags().IntVarP(&days, "days", "d", 1, "number of days to look back in history")
+	runCmd.Flags().Bool("debug", false, "enable debug logging")
 
-	rootCmd.Flags().StringVarP(&configFile, "config", "c", "", "path to config file (default ~/.config/repomon/config.toml)")
-	rootCmd.Flags().IntVarP(&days, "days", "d", 1, "number of days to look back in history")
-	rootCmd.Flags().StringVarP(&group, "group", "g", "", "repository group to use (default: 'default')")
-	rootCmd.Flags().Bool("debug", false, "enable debug logging")
+	var listCmd = &cobra.Command{
+		Use:   "list",
+		Short: "Lists configured git repositories",
+		Run: func(cmd *cobra.Command, args []string) {
+			cfg, err := config.Load(configFile)
+			if err != nil {
+				slog.Error("Failed to load configuration", "error", err)
+				os.Exit(1)
+			}
+
+			groupName := group
+			if groupName == "" {
+				groupName = "default"
+			}
+
+			repos := cfg.GetRepos(groupName)
+
+			if len(repos) == 0 {
+				fmt.Printf("No repositories found for group '%s'.\n", groupName)
+				return
+			}
+
+			fmt.Printf("Repositories for group '%s':\n", groupName)
+			for _, repo := range repos {
+				if repo.Path != "" {
+					fmt.Printf("  - %s: %s\n", repo.Name, repo.Path)
+				} else if repo.URL != "" {
+					fmt.Printf("  - %s: %s (remote)\n", repo.Name, repo.URL)
+				} else {
+					fmt.Printf("  - %s: (unknown location)\n", repo.Name)
+				}
+			}
+		},
+	}
+
+	rootCmd.AddCommand(runCmd)
+	rootCmd.AddCommand(listCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		slog.Error("Command execution failed", "error", err)
