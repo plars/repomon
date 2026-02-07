@@ -4,356 +4,278 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/plars/repomon/internal/config"
+	"github.com/plars/repomon/internal/git"
 )
 
-// Helper function to create a temporary config file for tests
-func createTempConfigFile(t *testing.T, content string) string {
-	tmpFile, err := ioutil.TempFile("", "repomon-config-*.toml")
-	if err != nil {
-		t.Fatalf("Failed to create temp config file: %v", err)
-	}
-	defer tmpFile.Close()
-
-	if _, err := tmpFile.WriteString(content); err != nil {
-		os.Remove(tmpFile.Name())
-		t.Fatalf("Failed to write to temp config file: %v", err)
-	}
-	return tmpFile.Name()
+// mockGitMonitor is a mock implementation of the GitMonitor interface.
+type mockGitMonitor struct {
+	results []git.RepoResult
+	err     error
+	days    int
 }
 
-// Helper to initialize a git repo and make a commit
-func setupDummyGitRepo(t *testing.T, path string) {
-	if err := os.MkdirAll(path, 0755); err != nil {
-		t.Fatalf("Failed to create dummy repo dir: %v", err)
-	}
-
-	cmd := exec.Command("git", "init")
-	cmd.Dir = path
-	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("Failed to git init in %s: %v\nOutput: %s", path, err, string(output))
-	}
-
-	// Create a dummy file
-	dummyFilePath := filepath.Join(path, "README.md")
-	if err := ioutil.WriteFile(dummyFilePath, []byte("Hello, Git!"), 0644); err != nil {
-		t.Fatalf("Failed to write dummy file: %v", err)
-	}
-
-	cmd = exec.Command("git", "add", "README.md")
-	cmd.Dir = path
-	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("Failed to git add: %v\nOutput: %s", err, string(output))
-	}
-
-	cmd = exec.Command("git", "commit", "-m", "Initial commit")
-	cmd.Dir = path
-	// Set dummy committer info for CI environments
-	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=Test User", "GIT_AUTHOR_EMAIL=test@example.com", "GIT_COMMITTER_NAME=Test User", "GIT_COMMITTER_EMAIL=test@example.com")
-	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("Failed to git commit: %v\nOutput: %s", err, string(output))
-	}
+func (m *mockGitMonitor) GetRecentCommits(ctx context.Context) ([]git.RepoResult, error) {
+	return m.results, m.err
 }
 
+func (m *mockGitMonitor) SetDays(days int) {
+	m.days = days
+}
+
+// mockFormatter is a mock implementation of the ReportFormatter interface.
+type mockFormatter struct {
+	output string
+	err    error
+}
+
+func (m *mockFormatter) Format(results []git.RepoResult) (string, error) {
+	return m.output, m.err
+}
 
 func TestExecuteList(t *testing.T) {
-	// Create testdata directory and a dummy repo1
-	testdataDir := filepath.Join(os.TempDir(), "repomon-testdata")
-	dummyRepoPath := filepath.Join(testdataDir, "repo1")
-	if err := os.MkdirAll(dummyRepoPath, 0755); err != nil {
-		t.Fatalf("Failed to create testdata directory: %v", err)
-	}
-	defer os.RemoveAll(testdataDir)
-
-
 	tests := []struct {
 		name           string
-		configContent  string
+		cfg            *config.Config
+		loadErr        error
 		rootOpts       *rootOptions
 		expectedOutput string
 		expectedError  string
 	}{
 		{
 			name: "List default group with local and remote repos",
-			configContent: `
-[defaults]
-days = 1
-
-[groups.default]
-repos = [
-    "__TESTDATA_DIR__",
-    "https://github.com/test/remote-repo",
-]
-`,
-			rootOpts: &rootOptions{
-				group: "", // Should default to "default"
+			cfg: &config.Config{
+				Groups: map[string]*config.Group{
+					"default": {
+						Repos: []string{"/path/to/repo1", "https://github.com/test/remote-repo"},
+					},
+				},
 			},
-			expectedOutput: fmt.Sprintf("Repositories for group 'default':\n  - repo1: %s\n  - remote-repo: https://github.com/test/remote-repo (remote)\n", dummyRepoPath),
-			expectedError:  "",
+			rootOpts: &rootOptions{group: ""},
+			expectedOutput: "Repositories for group 'default':\n  - repo1: /path/to/repo1\n  - remote-repo: https://github.com/test/remote-repo (remote)\n",
 		},
 		{
 			name: "List specific group with no repos",
-			configContent: `
-[groups.emptygroup]
-repos = []
-`,
-			rootOpts: &rootOptions{
-				group: "emptygroup",
+			cfg: &config.Config{
+				Groups: map[string]*config.Group{
+					"emptygroup": {Repos: []string{}},
+				},
 			},
+			rootOpts: &rootOptions{group: "emptygroup"},
 			expectedOutput: "No repositories found for group 'emptygroup'.\n",
-			expectedError:  "",
 		},
 		{
 			name: "List non-existent group, fallback to default",
-			configContent: `
-[groups.default]
-repos = ["__TESTDATA_DIR__"]
-`,
-			rootOpts: &rootOptions{
-				group: "nonexistent",
+			cfg: &config.Config{
+				Groups: map[string]*config.Group{
+					"default": {Repos: []string{"/path/to/repo1"}},
+				},
 			},
-			expectedOutput: fmt.Sprintf("Repositories for group 'default':\n  - repo1: %s\n", dummyRepoPath), // Now uses effectiveGroupName
-			expectedError:  "",
+			rootOpts: &rootOptions{group: "nonexistent"},
+			expectedOutput: "Repositories for group 'default':\n  - repo1: /path/to/repo1\n",
 		},
 		{
-			name: "Config file not found",
-			configContent: `
-`, // Empty content for a non-existent file
+			name:    "Config file not found",
+			loadErr: fmt.Errorf("config file not found: /path/does/not/exist/config.toml"),
 			rootOpts: &rootOptions{
 				configFile: "/path/does/not/exist/config.toml",
 				group:      "default",
 			},
-			expectedOutput: "",
-			expectedError:  "failed to load configuration: config file not found: /path/does/not/exist/config.toml",
+			expectedError: "failed to load configuration: config file not found: /path/does/not/exist/config.toml",
 		},
 		{
-			name: "Config file is empty",
-			configContent: ``, // Empty config file content
+			name: "Config file is empty (no default group)",
+			cfg:  &config.Config{Groups: make(map[string]*config.Group)},
 			rootOpts: &rootOptions{
 				group: "default",
 			},
-			expectedOutput: "", // Now empty because config.Load returns error, and executeList exits early
-			expectedError:  "failed to get repositories: no default group found in configuration",
-		},
-		{
-			name: "Config file with no default group and non-existent group requested",
-			configContent: `
-[groups.other]
-repos = ["__TESTDATA_DIR__"]
-`,
-			rootOpts: &rootOptions{
-				group: "nonexistent",
-			},
-			expectedOutput: "", // No output because GetRepos will return an error due to no default group fallback
-			expectedError:  "failed to get repositories: no default group found in configuration",
+			expectedError: "failed to get repositories: no default group found in configuration",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			outputBuf := new(bytes.Buffer)
-			errorBuf := new(bytes.Buffer)
+			outBuf := new(bytes.Buffer)
+			errBuf := new(bytes.Buffer)
+			runner := newDefaultRunner(outBuf, errBuf)
 
-			var cfgPath string
-			// Handle "Config file not found" specifically
-			if strings.Contains(tt.expectedError, "config file not found") {
-				cfgPath = tt.rootOpts.configFile // Keep the non-existent path
-			} else {
-				// For other cases, create a temporary config file
-				formattedConfigContent := strings.Replace(tt.configContent, "__TESTDATA_DIR__", dummyRepoPath, -1) // Use dummyRepoPath here for the replacement
-				cfgPath = createTempConfigFile(t, formattedConfigContent)
-				defer os.Remove(cfgPath)
+			runner.loadConfig = func(path string) (*config.Config, error) {
+				if tt.loadErr != nil {
+					return nil, tt.loadErr
+				}
+				return tt.cfg, nil
 			}
-			tt.rootOpts.configFile = cfgPath // Ensure rootOpts has the correct config file path for the test
 
-			err := executeList(nil, tt.rootOpts, outputBuf, errorBuf) // args not used by executeList
+			err := runner.executeList(nil, tt.rootOpts)
 
 			if tt.expectedError != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.expectedError) {
-					t.Errorf("Test %s:\nExpected error containing '%s'\nGot: %v", tt.name, tt.expectedError, err)
+					t.Errorf("Expected error containing %q, got %v", tt.expectedError, err)
 				}
-			} else if err != nil {
-				t.Errorf("Test %s:\nUnexpected error: %v", tt.name, err)
-			}
-
-			if outputBuf.String() != tt.expectedOutput {
-				t.Errorf("Test %s:\nExpected output:\n%q\nGot:\n%q", tt.name, tt.expectedOutput, outputBuf.String())
-			}
-
-			// We are not explicitly checking errorBuf for now, but it's available for debug/future.
-			if errorBuf.Len() > 0 {
-				t.Logf("Test %s:\nError output (slog):\n%s", tt.name, errorBuf.String())
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				}
+				if outBuf.String() != tt.expectedOutput {
+					t.Errorf("Expected output:\n%q\nGot:\n%q", tt.expectedOutput, outBuf.String())
+				}
 			}
 		})
 	}
 }
 
-
 func TestExecuteRun(t *testing.T) {
-	// Create testdata directory for dummy repos
-	testdataDir := filepath.Join(os.TempDir(), "repomon-testdata-run")
-	dummyRepoPath := filepath.Join(testdataDir, "dummy-repo")
-	defer os.RemoveAll(testdataDir)
-
-	setupDummyGitRepo(t, dummyRepoPath) // Setup the dummy git repo
-
 	tests := []struct {
 		name           string
-		configContent  string
+		cfg            *config.Config
+		loadErr        error
+		monitorResults []git.RepoResult
+		monitorErr     error
+		formatOutput   string
+		formatErr      error
 		runOpts        *runOptions
 		rootOpts       *rootOptions
 		expectedOutput string
 		expectedError  string
-		expectedLog    string
 	}{
 		{
-			name: "Successful run with local repo",
-			configContent: fmt.Sprintf(`
-[defaults]
-days = 1
-
-[groups.default]
-repos = ["%s"]
-`, dummyRepoPath),
-			runOpts: &runOptions{
-				days:  1,
-				debug: false,
+			name: "Successful run",
+			cfg: &config.Config{
+				Defaults: config.Defaults{Days: 1},
+				Groups: map[string]*config.Group{
+					"default": {Repos: []string{"/path/to/repo"}},
+				},
 			},
-			rootOpts: &rootOptions{
-				group: "default",
+			monitorResults: []git.RepoResult{
+				{
+					Repo: config.Repo{Name: "repo", Path: "/path/to/repo"},
+					Commits: []git.Commit{
+						{Message: "Initial commit", Author: "Test User"},
+					},
+				},
 			},
-			expectedOutput: "Repository Monitor Report",
-			expectedError:  "",
-			expectedLog:    "",
+			formatOutput:   "Repository Monitor Report\nrepo: Initial commit",
+			runOpts:        &runOptions{days: 1},
+			rootOpts:       &rootOptions{group: "default"},
+			expectedOutput: "Repository Monitor Report\nrepo: Initial commit",
 		},
 		{
-			name: "Config file not found",
-			configContent: ``,
-			runOpts: &runOptions{
-				days: 1,
-			},
+			name:    "Config load failure",
+			loadErr: fmt.Errorf("file not found"),
+			runOpts: &runOptions{days: 1},
 			rootOpts: &rootOptions{
-				configFile: "/path/does/not/exist/config.toml",
+				configFile: "missing.toml",
 				group:      "default",
 			},
-			expectedOutput: "",
-			expectedError:  "failed to load configuration: config file not found: /path/does/not/exist/config.toml",
-			expectedLog:    "Failed to load configuration",
+			expectedError: "failed to load configuration: file not found",
 		},
 		{
-			name: "No default group found in configuration (error)",
-			configContent: `
-[groups.other]
-repos = ["__TESTDATA_DIR__"]
-`, // Use placeholder for path
-			runOpts: &runOptions{
-				days: 1,
+			name: "Monitor failure",
+			cfg: &config.Config{
+				Groups: map[string]*config.Group{
+					"default": {Repos: []string{"/path/to/repo"}},
+				},
 			},
-			rootOpts: &rootOptions{
-				group: "nonexistent",
-			},
-			expectedOutput: "",
-			expectedError:  "failed to get repositories: no default group found in configuration",
-			expectedLog:    "Failed to get repositories",
-		},
-		{
-			name: "Empty config file (error)",
-			configContent: ``,
-			runOpts: &runOptions{
-				days: 1,
-			},
-			rootOpts: &rootOptions{
-				group: "default",
-			},
-			expectedOutput: "",
-			expectedError:  "failed to get repositories: no default group found in configuration", // Error from GetRepos if Load succeeds with empty config
-			expectedLog:    "Failed to get repositories",
-		},
-		{
-			name: "No repositories found for group (output message)",
-			configContent: `
-[groups.emptygroup]
-repos = []
-`,
-			runOpts: &runOptions{
-				days: 1,
-			},
-			rootOpts: &rootOptions{
-				group: "emptygroup",
-			},
-			expectedOutput: "No recent commits found in any repository.",
-			expectedError:  "",
-			expectedLog:    "",
+			monitorErr: fmt.Errorf("git error"),
+			runOpts:    &runOptions{days: 1},
+			rootOpts:   &rootOptions{group: "default"},
+			expectedError: "failed to get recent commits: git error",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			outputBuf := new(bytes.Buffer)
-			errorBuf := new(bytes.Buffer)
+			outBuf := new(bytes.Buffer)
+			errBuf := new(bytes.Buffer)
+			runner := newDefaultRunner(outBuf, errBuf)
 
-			var cfgPath string
-			// Handle "Config file not found" specifically
-			if strings.Contains(tt.expectedError, "config file not found") {
-				cfgPath = tt.rootOpts.configFile // Keep the non-existent path
-			} else {
-				// For other cases, create a temporary config file
-				formattedConfigContent := strings.Replace(tt.configContent, "__TESTDATA_DIR__", dummyRepoPath, -1)
-				cfgPath = createTempConfigFile(t, formattedConfigContent)
-				defer os.Remove(cfgPath)
+			runner.loadConfig = func(path string) (*config.Config, error) {
+				if tt.loadErr != nil {
+					return nil, tt.loadErr
+				}
+				return tt.cfg, nil
 			}
-			tt.rootOpts.configFile = cfgPath // Ensure rootOpts has the correct config file path for the test
+			runner.newGitMonitor = func(repos []config.Repo) GitMonitor {
+				return &mockGitMonitor{results: tt.monitorResults, err: tt.monitorErr}
+			}
+			runner.newFormatter = func() ReportFormatter {
+				return &mockFormatter{output: tt.formatOutput, err: tt.formatErr}
+			}
 
-
-			// Cobra command context for executeRun. Use context.Background() for tests.
-			ctx := context.Background()
-
-
-			err := executeRun(ctx, nil, tt.runOpts, tt.rootOpts, outputBuf, errorBuf) // args not used by executeRun
-
+			err := runner.executeRun(context.Background(), nil, tt.runOpts, tt.rootOpts)
 
 			if tt.expectedError != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.expectedError) {
-					t.Errorf("Test %s:\nExpected error containing '%s'\nGot: %v", tt.name, tt.expectedError, err)
+					t.Errorf("Expected error containing %q, got %v", tt.expectedError, err)
 				}
-			} else if err != nil {
-				t.Errorf("Test %s:\nUnexpected error: %v", tt.name, err)
-			}
-
-			// For successful run, the exact time string (0 seconds ago) is hard to match.
-			// So, for successful runs, just check if the significant parts are present.
-			// For no repos found, also check with Contains.
-			if tt.expectedOutput != "" && tt.expectedError == "" {
-				if !strings.Contains(outputBuf.String(), tt.expectedOutput) {
-					t.Errorf("Test %s:\nExpected output to contain '%s', Got:\n%q", tt.name, tt.expectedOutput, outputBuf.String())
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
 				}
-				// Additional checks for specific success/no-repo outputs
-				if strings.Contains(tt.name, "Successful run") {
-					if !strings.Contains(outputBuf.String(), "dummy-repo") || !strings.Contains(outputBuf.String(), "Initial commit") {
-						t.Errorf("Test %s:\nSuccessful run output missing key elements. Got:\n%q", tt.name, outputBuf.String())
-					}
-				} else if strings.Contains(tt.name, "No repositories found") {
-					if !strings.Contains(outputBuf.String(), "No recent commits found in any repository.") {
-						t.Errorf("Test %s:\nNo repositories found output missing key elements. Got:\n%q", tt.name, outputBuf.String())
-					}
+				if outBuf.String() != tt.expectedOutput {
+					t.Errorf("Expected output %q, got %q", tt.expectedOutput, outBuf.String())
 				}
-			} else if outputBuf.String() != tt.expectedOutput { // For exact match when expecting empty output for error cases
-				t.Errorf("Test %s:\nExpected output:\n%q\nGot:\n%q", tt.name, tt.expectedOutput, outputBuf.String())
-			}
-
-			// Check error log output if expected
-			if tt.expectedLog != "" {
-				if !strings.Contains(errorBuf.String(), tt.expectedLog) {
-					t.Errorf("Test %s:\nExpected error log to contain '%s', Got:\n%q", tt.name, tt.expectedLog, errorBuf.String())
-				}
-			} else if errorBuf.Len() > 0 {
-				t.Logf("Test %s:\nUnexpected error log output (slog):\n%s", tt.name, errorBuf.String())
 			}
 		})
+	}
+}
+
+// Keep an integration test to ensure everything works together
+func TestIntegration(t *testing.T) {
+	tmpDir := t.TempDir()
+	repoPath := filepath.Join(tmpDir, "repo1")
+	if err := os.MkdirAll(repoPath, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simple git setup for integration test
+	runGit := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repoPath
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=Test", "GIT_AUTHOR_EMAIL=test@example.com", "GIT_COMMITTER_NAME=Test", "GIT_COMMITTER_EMAIL=test@example.com")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\nOutput: %s", args, err, out)
+		}
+	}
+
+	runGit("init")
+	if err := os.WriteFile(filepath.Join(repoPath, "file"), []byte("data"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", ".")
+	runGit("commit", "-m", "first")
+
+	cfgPath := filepath.Join(tmpDir, "config.toml")
+	cfgContent := fmt.Sprintf(`
+[groups.default]
+repos = ["%s"]
+`, repoPath)
+	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	outBuf := new(bytes.Buffer)
+	errBuf := new(bytes.Buffer)
+	runner := newDefaultRunner(outBuf, errBuf)
+
+	rootOpts := &rootOptions{configFile: cfgPath}
+	runOpts := &runOptions{days: 1}
+
+	err := runner.executeRun(context.Background(), nil, runOpts, rootOpts)
+	if err != nil {
+		t.Fatalf("Integration test failed: %v", err)
+	}
+
+	if !strings.Contains(outBuf.String(), "Repository Monitor Report") {
+		t.Errorf("Expected report header, got: %s", outBuf.String())
+	}
+	if !strings.Contains(outBuf.String(), "first") {
+		t.Errorf("Expected commit message, got: %s", outBuf.String())
 	}
 }

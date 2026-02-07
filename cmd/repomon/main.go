@@ -25,18 +25,54 @@ type runOptions struct {
 	debug bool
 }
 
+// GitMonitor defines the interface for monitoring git repositories.
+type GitMonitor interface {
+	GetRecentCommits(ctx context.Context) ([]git.RepoResult, error)
+	SetDays(days int)
+}
+
+// ReportFormatter defines the interface for formatting reports.
+type ReportFormatter interface {
+	Format(results []git.RepoResult) (string, error)
+}
+
+// repomonRunner handles the execution of repomon commands.
+type repomonRunner struct {
+	output io.Writer
+	err    io.Writer
+
+	// Dependency injection for testing
+	loadConfig     func(string) (*config.Config, error)
+	newGitMonitor  func([]config.Repo) GitMonitor
+	newFormatter   func() ReportFormatter
+}
+
+func newDefaultRunner(out, err io.Writer) *repomonRunner {
+	return &repomonRunner{
+		output:     out,
+		err:        err,
+		loadConfig: config.Load,
+		newGitMonitor: func(repos []config.Repo) GitMonitor {
+			return git.NewMonitorWithRepos(repos)
+		},
+		newFormatter: func() ReportFormatter {
+			return report.NewFormatter()
+		},
+	}
+}
+
 func main() {
 	// Initialize option structs
 	rootOpts := &rootOptions{}
 	runOpts := &runOptions{}
+	runner := newDefaultRunner(os.Stdout, os.Stderr)
 
 	var runCmd = &cobra.Command{
 		Use:   "run",
 		Short: "Monitors configured git repositories and reports recent changes",
 		Run: func(cmd *cobra.Command, args []string) {
-			// Call the extracted handler function
-			if err := executeRun(cmd.Context(), args, runOpts, rootOpts, os.Stdout, os.Stderr); err != nil {
-				slog.Error("Run command failed", "error", err) // Log error before exiting
+			if err := runner.executeRun(cmd.Context(), args, runOpts, rootOpts); err != nil {
+				slog.Error("Run command failed", "error", err)
 				os.Exit(1)
 			}
 		},
@@ -59,20 +95,18 @@ showing the most recent commits to each repository in an easy-to-read format.`,
 	// Add run-specific flags to rootCmd so they work without 'run' subcommand
 	rootCmd.Flags().AddFlagSet(runCmd.Flags())
 
-
 	var listCmd = &cobra.Command{
 		Use:   "list",
 		Short: "Lists configured git repositories",
 		Run: func(cmd *cobra.Command, args []string) {
-			// Call the extracted handler function without listOpts
-			if err := executeList(args, rootOpts, os.Stdout, os.Stderr); err != nil {
-				slog.Error("List command failed", "error", err) // Log error before exiting
+			if err := runner.executeList(args, rootOpts); err != nil {
+				slog.Error("List command failed", "error", err)
 				os.Exit(1)
 			}
 		},
 	}
 
-	rootCmd.AddCommand(runCmd) // Keep runCmd as a separate subcommand
+	rootCmd.AddCommand(runCmd)
 	rootCmd.AddCommand(listCmd)
 
 	if err := rootCmd.Execute(); err != nil {
@@ -82,12 +116,11 @@ showing the most recent commits to each repository in an easy-to-read format.`,
 }
 
 // executeRun contains the core logic for the 'run' command.
-// It now takes outputWriter and errorWriter, and returns an error instead of os.Exit.
-func executeRun(ctx context.Context, args []string, runOpts *runOptions, rootOpts *rootOptions, outputWriter io.Writer, errorWriter io.Writer) error {
+func (r *repomonRunner) executeRun(ctx context.Context, args []string, runOpts *runOptions, rootOpts *rootOptions) error {
 	// Set up a logger that writes to errorWriter for this function's scope.
-	logger := slog.New(slog.NewTextHandler(errorWriter, nil))
+	logger := slog.New(slog.NewTextHandler(r.err, nil))
 
-	cfg, err := config.Load(rootOpts.configFile)
+	cfg, err := r.loadConfig(rootOpts.configFile)
 	if err != nil {
 		logger.Error("Failed to load configuration", "error", err)
 		return fmt.Errorf("failed to load configuration: %w", err)
@@ -95,59 +128,53 @@ func executeRun(ctx context.Context, args []string, runOpts *runOptions, rootOpt
 
 	// Only override cfg.Defaults.Days if runOpts.days was explicitly changed from its default (1)
 	// and is different from the config's default.
-	if runOpts.days != 1 || cfg.Defaults.Days == 0 { // if runOpts.days is not default OR config default is 0
-		if runOpts.days != 1 { // if runOpts.days was explicitly set
+	if runOpts.days != 1 || cfg.Defaults.Days == 0 {
+		if runOpts.days != 1 {
 			cfg.Defaults.Days = runOpts.days
-		} else if cfg.Defaults.Days == 0 { // if runOpts.days was not set and config default is 0
-			cfg.Defaults.Days = 1 // Fallback to 1 day
+		} else if cfg.Defaults.Days == 0 {
+			cfg.Defaults.Days = 1
 		}
 	}
 
-
 	if runOpts.debug {
-		logger = slog.New(slog.NewTextHandler(errorWriter, &slog.HandlerOptions{Level: slog.LevelDebug}))
-		// Note: slog.SetLogLoggerLevel(slog.LevelDebug) affects the default logger globally.
-		// For tests, it's better to rely on this local 'logger' instance.
+		logger = slog.New(slog.NewTextHandler(r.err, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	}
-
 
 	requestedGroupName := rootOpts.group
 	if requestedGroupName == "" {
 		requestedGroupName = "default"
 	}
 
-	repos, _, err := cfg.GetRepos(requestedGroupName) // Handle the new error return, ignore effectiveGroupName
+	repos, _, err := cfg.GetRepos(requestedGroupName)
 	if err != nil {
 		logger.Error("Failed to get repositories", "error", err)
 		return fmt.Errorf("failed to get repositories: %w", err)
 	}
 
-	monitor := git.NewMonitorWithRepos(repos)
+	monitor := r.newGitMonitor(repos)
 	monitor.SetDays(cfg.Defaults.Days)
-	// Pass the context from cmd to GetRecentCommits
 	results, err := monitor.GetRecentCommits(ctx)
 	if err != nil {
 		logger.Error("Failed to get recent commits", "error", err)
 		return fmt.Errorf("failed to get recent commits: %w", err)
 	}
 
-	reporter := report.NewFormatter()
+	reporter := r.newFormatter()
 	output, err := reporter.Format(results)
 	if err != nil {
 		logger.Error("Failed to format report", "error", err)
 		return fmt.Errorf("failed to format report: %w", err)
 	}
 
-	fmt.Fprint(outputWriter, output)
+	fmt.Fprint(r.output, output)
 	return nil
 }
 
 // executeList contains the core logic for the 'list' command.
-// It now takes outputWriter and errorWriter, and returns an error instead of os.Exit.
-func executeList(args []string, rootOpts *rootOptions, outputWriter io.Writer, errorWriter io.Writer) error {
-	logger := slog.New(slog.NewTextHandler(errorWriter, nil))
+func (r *repomonRunner) executeList(args []string, rootOpts *rootOptions) error {
+	logger := slog.New(slog.NewTextHandler(r.err, nil))
 
-	cfg, err := config.Load(rootOpts.configFile)
+	cfg, err := r.loadConfig(rootOpts.configFile)
 	if err != nil {
 		logger.Error("Failed to load configuration", "error", err)
 		return fmt.Errorf("failed to load configuration: %w", err)
@@ -158,25 +185,25 @@ func executeList(args []string, rootOpts *rootOptions, outputWriter io.Writer, e
 		requestedGroupName = "default"
 	}
 
-	repos, effectiveGroupName, err := cfg.GetRepos(requestedGroupName) // Handle the new error return
+	repos, effectiveGroupName, err := cfg.GetRepos(requestedGroupName)
 	if err != nil {
 		logger.Error("Failed to get repositories", "error", err)
 		return fmt.Errorf("failed to get repositories: %w", err)
 	}
 
 	if len(repos) == 0 {
-		fmt.Fprintf(outputWriter, "No repositories found for group '%s'.\n", effectiveGroupName)
+		fmt.Fprintf(r.output, "No repositories found for group '%s'.\n", effectiveGroupName)
 		return nil
 	}
 
-	fmt.Fprintf(outputWriter, "Repositories for group '%s':\n", effectiveGroupName)
+	fmt.Fprintf(r.output, "Repositories for group '%s':\n", effectiveGroupName)
 	for _, repo := range repos {
 		if repo.Path != "" {
-			fmt.Fprintf(outputWriter, "  - %s: %s\n", repo.Name, repo.Path)
+			fmt.Fprintf(r.output, "  - %s: %s\n", repo.Name, repo.Path)
 		} else if repo.URL != "" {
-			fmt.Fprintf(outputWriter, "  - %s: %s (remote)\n", repo.Name, repo.URL)
+			fmt.Fprintf(r.output, "  - %s: %s (remote)\n", repo.Name, repo.URL)
 		} else {
-			fmt.Fprintf(outputWriter, "  - %s: (unknown location)\n", repo.Name)
+			fmt.Fprintf(r.output, "  - %s: (unknown location)\n", repo.Name)
 		}
 	}
 	return nil
