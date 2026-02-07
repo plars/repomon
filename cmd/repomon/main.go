@@ -42,9 +42,9 @@ type repomonRunner struct {
 	err    io.Writer
 
 	// Dependency injection for testing
-	loadConfig     func(string) (*config.Config, error)
-	newGitMonitor  func([]config.Repo) GitMonitor
-	newFormatter   func() ReportFormatter
+	loadConfig    func(string) (*config.Config, error)
+	newGitMonitor func([]config.Repo) GitMonitor
+	newFormatter  func() ReportFormatter
 }
 
 func newDefaultRunner(out, err io.Writer) *repomonRunner {

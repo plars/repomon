@@ -57,7 +57,7 @@ func TestExecuteList(t *testing.T) {
 					},
 				},
 			},
-			rootOpts: &rootOptions{group: ""},
+			rootOpts:       &rootOptions{group: ""},
 			expectedOutput: "Repositories for group 'default':\n  - repo1: /path/to/repo1\n  - remote-repo: https://github.com/test/remote-repo (remote)\n",
 		},
 		{
@@ -67,7 +67,7 @@ func TestExecuteList(t *testing.T) {
 					"emptygroup": {Repos: []string{}},
 				},
 			},
-			rootOpts: &rootOptions{group: "emptygroup"},
+			rootOpts:       &rootOptions{group: "emptygroup"},
 			expectedOutput: "No repositories found for group 'emptygroup'.\n",
 		},
 		{
@@ -77,7 +77,7 @@ func TestExecuteList(t *testing.T) {
 					"default": {Repos: []string{"/path/to/repo1"}},
 				},
 			},
-			rootOpts: &rootOptions{group: "nonexistent"},
+			rootOpts:       &rootOptions{group: "nonexistent"},
 			expectedOutput: "Repositories for group 'default':\n  - repo1: /path/to/repo1\n",
 		},
 		{
@@ -182,9 +182,9 @@ func TestExecuteRun(t *testing.T) {
 					"default": {Repos: []string{"/path/to/repo"}},
 				},
 			},
-			monitorErr: fmt.Errorf("git error"),
-			runOpts:    &runOptions{days: 1},
-			rootOpts:   &rootOptions{group: "default"},
+			monitorErr:    fmt.Errorf("git error"),
+			runOpts:       &runOptions{days: 1},
+			rootOpts:      &rootOptions{group: "default"},
 			expectedError: "failed to get recent commits: git error",
 		},
 	}
