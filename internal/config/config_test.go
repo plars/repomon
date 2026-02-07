@@ -34,7 +34,11 @@ days = 7
 		t.Errorf("Expected days=7, got %d", cfg.Defaults.Days)
 	}
 
-	repos := cfg.GetRepos("default")
+	// Updated call to GetRepos (Line 37)
+	repos, _, err := cfg.GetRepos("default")
+	if err != nil {
+		t.Fatalf("Failed to get repos from valid config: %v", err)
+	}
 	if len(repos) != 2 {
 		t.Errorf("Expected 2 parsed repos, got %d", len(repos))
 	}
@@ -181,7 +185,11 @@ func TestGetRepos(t *testing.T) {
 		},
 	}
 
-	repos := cfg.GetRepos("default")
+	// Updated call to GetRepos (Line 184)
+	repos, _, err := cfg.GetRepos("default")
+	if err != nil {
+		t.Fatalf("Failed to get repos in TestGetRepos: %v", err)
+	}
 
 	if len(repos) != 4 {
 		t.Fatalf("Expected 4 repos, got %d", len(repos))

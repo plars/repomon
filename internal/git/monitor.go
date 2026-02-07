@@ -37,7 +37,12 @@ type Monitor struct {
 }
 
 func NewMonitor(cfg *config.Config) *Monitor {
-	return NewMonitorWithRepos(cfg.GetRepos("default"))
+	repos, _, err := cfg.GetRepos("default") // Handle the new error return
+	if err != nil {
+		slog.Error("Failed to get default repos for monitor initialization", "error", err)
+		return &Monitor{repos: []config.Repo{}, days: 1} // Return empty monitor on error
+	}
+	return NewMonitorWithRepos(repos)
 }
 
 func NewMonitorWithRepos(repos []config.Repo) *Monitor {

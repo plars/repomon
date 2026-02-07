@@ -129,14 +129,19 @@ func extractNameFromPath(path string) string {
 	return base
 }
 
-func (c *Config) GetRepos(groupName string) []Repo {
-	group, ok := c.Groups[groupName]
+// GetRepos retrieves the list of repositories for the given group name.
+// If the group name is not found, it falls back to the "default" group.
+// It returns the list of repositories, the effective group name used, and an error if the group (or fallback default) is not found.
+func (c *Config) GetRepos(requestedGroupName string) ([]Repo, string, error) { // Added error return
+	effectiveGroupName := requestedGroupName
+	group, ok := c.Groups[requestedGroupName]
 	if !ok {
-		slog.Warn("Group not found, using 'default' group", "requested", groupName)
+		slog.Warn("Group not found, using 'default' group", "requested", requestedGroupName)
+		effectiveGroupName = "default"
 		group = c.Groups["default"]
 		if group == nil {
 			slog.Error("No default group found in configuration")
-			return []Repo{}
+			return []Repo{}, effectiveGroupName, fmt.Errorf("no default group found in configuration") // Explicitly return error
 		}
 	}
 
@@ -150,7 +155,7 @@ func (c *Config) GetRepos(groupName string) []Repo {
 		repos = append(repos, repo)
 	}
 
-	return repos
+	return repos, effectiveGroupName, nil // Return nil error on success
 }
 
 // Load loads the configuration from the specified file path
