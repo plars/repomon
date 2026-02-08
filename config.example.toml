@@ -8,8 +8,7 @@ days = 7  # Number of days to look back in history
 repos = [
     "/home/user/projects/my-project",           # Local - auto-named "my-project"
     "~/code/another-repo",                      # Local with ~ - auto-named "another-repo"
-    "https://github.com/go-git/go-git",         # Remote - auto-named "go-git"
-    "https://github.com/kubernetes/kubernetes",  # Remote - auto-named "kubernetes"
+    "https://github.com/plars/repomon",         # Remote - auto-named "repomon"
 ]
 
 [groups.work]
