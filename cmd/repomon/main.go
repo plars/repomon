@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 
 	"github.com/plars/repomon/internal/config"
 	"github.com/plars/repomon/internal/git"
@@ -109,6 +110,20 @@ showing the most recent commits to each repository in an easy-to-read format.`,
 	rootCmd.AddCommand(runCmd)
 	rootCmd.AddCommand(listCmd)
 
+	var addCmd = &cobra.Command{
+		Use:   "add <repo>",
+		Short: "Adds a repository to the configuration",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := runner.executeAdd(args, rootOpts); err != nil {
+				slog.Error("Add command failed", "error", err)
+				os.Exit(1)
+			}
+		},
+	}
+
+	rootCmd.AddCommand(addCmd)
+
 	if err := rootCmd.Execute(); err != nil {
 		slog.Error("Command execution failed", "error", err)
 		os.Exit(1)
@@ -206,5 +221,50 @@ func (r *repomonRunner) executeList(args []string, rootOpts *rootOptions) error 
 			fmt.Fprintf(r.output, "  - %s: (unknown location)\n", repo.Name)
 		}
 	}
+	return nil
+}
+
+// executeAdd contains the core logic for the 'add' command.
+func (r *repomonRunner) executeAdd(args []string, rootOpts *rootOptions) error {
+	if len(args) == 0 {
+		return fmt.Errorf("repository argument is required")
+	}
+
+	repoStr := args[0]
+	logger := slog.New(slog.NewTextHandler(r.err, nil))
+
+	cfg, err := r.loadConfig(rootOpts.configFile)
+	if err != nil {
+		logger.Error("Failed to load configuration", "error", err)
+		return fmt.Errorf("failed to load configuration: %w", err)
+	}
+
+	requestedGroupName := rootOpts.group
+	if requestedGroupName == "" {
+		requestedGroupName = "default"
+	}
+
+	if err := cfg.AddRepo(repoStr, requestedGroupName); err != nil {
+		logger.Error("Failed to add repository", "error", err)
+		return fmt.Errorf("failed to add repository: %w", err)
+	}
+
+	configPath := rootOpts.configFile
+	if configPath == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("failed to get home directory: %w", err)
+		}
+		configPath = os.ExpandEnv(filepath.Join(home, ".config", "repomon", "config.toml"))
+	} else {
+		configPath = os.ExpandEnv(configPath)
+	}
+
+	if err := cfg.Save(configPath); err != nil {
+		logger.Error("Failed to save configuration", "error", err)
+		return fmt.Errorf("failed to save configuration: %w", err)
+	}
+
+	fmt.Fprintf(r.output, "Added '%s' to group '%s' in %s\n", repoStr, requestedGroupName, configPath)
 	return nil
 }

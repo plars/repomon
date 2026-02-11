@@ -158,6 +158,60 @@ func (c *Config) GetRepos(requestedGroupName string) ([]Repo, string, error) { /
 	return repos, effectiveGroupName, nil // Return nil error on success
 }
 
+// AddRepo adds a repository to the specified group
+func (c *Config) AddRepo(repoStr, groupName string) error {
+	if c.Groups == nil {
+		c.Groups = make(map[string]*Group)
+	}
+
+	group, ok := c.Groups[groupName]
+	if !ok {
+		group = &Group{
+			Repos: []string{},
+		}
+		c.Groups[groupName] = group
+	}
+
+	// Check if repo already exists
+	for _, existingRepo := range group.Repos {
+		if existingRepo == repoStr {
+			return fmt.Errorf("repository '%s' already exists in group '%s'", repoStr, groupName)
+		}
+	}
+
+	group.Repos = append(group.Repos, repoStr)
+	return nil
+}
+
+// Save saves the configuration to the specified file path
+func (c *Config) Save(configFile string) error {
+	if configFile == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("failed to get home directory: %w", err)
+		}
+		configFile = filepath.Join(home, ".config", "repomon", "config.toml")
+	}
+
+	// Create directory if it doesn't exist
+	configDir := filepath.Dir(configFile)
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	data, err := toml.Marshal(c)
+	if err != nil {
+		return fmt.Errorf("failed to marshal TOML: %w", err)
+	}
+
+	if err := os.WriteFile(configFile, data, 0644); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	slog.Debug("Configuration saved successfully", "file", configFile)
+	return nil
+}
+
 // Load loads the configuration from the specified file path
 func Load(configFile string) (*Config, error) {
 	if configFile == "" {

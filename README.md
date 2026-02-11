@@ -121,6 +121,40 @@ repomon -d 14
 repomon -c /custom/config.toml -g work -d 30
 ```
 
+### Adding Repositories
+
+Add repositories to your configuration without editing the config file manually:
+
+```bash
+# Add to default group
+repomon add https://github.com/kubernetes/kubernetes
+
+# Add to a specific group
+repomon add -g work https://github.com/go-git/go-git
+
+# Add a local repository
+repomon add ~/projects/my-project
+```
+
+The `add` command supports the same flags as other commands:
+- `-c, --config`: Path to configuration file
+- `-g, --group`: Repository group to add to (default: 'default')
+
+### Listing Repositories
+
+List configured repositories:
+
+```bash
+# List default group
+repomon list
+
+# List specific group
+repomon list -g work
+
+# List from custom config
+repomon list -c /path/to/config.toml
+```
+
 ### CLI Options
 
 - `-c, --config`: Path to configuration file (default: `~/.config/repomon/config.toml`)
