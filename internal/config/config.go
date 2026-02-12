@@ -183,7 +183,48 @@ func (c *Config) AddRepo(repoStr, groupName string) error {
 	return nil
 }
 
-// Save saves the configuration to the specified file path
+// formatTOML formats the config with proper indentation and spacing
+func (c *Config) formatTOML() ([]byte, error) {
+	var builder strings.Builder
+
+	// Write defaults section
+	if c.Defaults.Days != 0 {
+		builder.WriteString("[defaults]\n")
+		builder.WriteString(fmt.Sprintf("days = %d\n\n", c.Defaults.Days))
+	}
+
+	// Write each group section directly
+	if c.Groups != nil && len(c.Groups) > 0 {
+		// Write groups in alphabetical order for consistency
+		groupNames := make([]string, 0, len(c.Groups))
+		for groupName := range c.Groups {
+			groupNames = append(groupNames, groupName)
+		}
+
+		for i, groupName := range groupNames {
+			group := c.Groups[groupName]
+			if group != nil && len(group.Repos) > 0 {
+				builder.WriteString(fmt.Sprintf("[groups.%s]\n", groupName))
+				builder.WriteString("repos = [\n")
+
+				for _, repo := range group.Repos {
+					builder.WriteString(fmt.Sprintf("    \"%s\",\n", repo))
+				}
+
+				builder.WriteString("]\n")
+
+				// Add blank line between groups (but not after the last one)
+				if i < len(groupNames)-1 {
+					builder.WriteString("\n")
+				}
+			}
+		}
+	}
+
+	return []byte(builder.String()), nil
+}
+
+// Save saves the configuration to the specified file path with proper formatting
 func (c *Config) Save(configFile string) error {
 	if configFile == "" {
 		home, err := os.UserHomeDir()
@@ -199,9 +240,9 @@ func (c *Config) Save(configFile string) error {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	data, err := toml.Marshal(c)
+	data, err := c.formatTOML()
 	if err != nil {
-		return fmt.Errorf("failed to marshal TOML: %w", err)
+		return fmt.Errorf("failed to format TOML: %w", err)
 	}
 
 	if err := os.WriteFile(configFile, data, 0644); err != nil {
