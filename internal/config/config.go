@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"net/url"
 	"os"
@@ -183,48 +184,8 @@ func (c *Config) AddRepo(repoStr, groupName string) error {
 	return nil
 }
 
-// formatTOML formats the config with proper indentation and spacing
-func (c *Config) formatTOML() ([]byte, error) {
-	var builder strings.Builder
-
-	// Write defaults section
-	if c.Defaults.Days != 0 {
-		builder.WriteString("[defaults]\n")
-		builder.WriteString(fmt.Sprintf("days = %d\n\n", c.Defaults.Days))
-	}
-
-	// Write each group section directly
-	if c.Groups != nil && len(c.Groups) > 0 {
-		// Write groups in alphabetical order for consistency
-		groupNames := make([]string, 0, len(c.Groups))
-		for groupName := range c.Groups {
-			groupNames = append(groupNames, groupName)
-		}
-
-		for i, groupName := range groupNames {
-			group := c.Groups[groupName]
-			if group != nil && len(group.Repos) > 0 {
-				builder.WriteString(fmt.Sprintf("[groups.%s]\n", groupName))
-				builder.WriteString("repos = [\n")
-
-				for _, repo := range group.Repos {
-					builder.WriteString(fmt.Sprintf("    \"%s\",\n", repo))
-				}
-
-				builder.WriteString("]\n")
-
-				// Add blank line between groups (but not after the last one)
-				if i < len(groupNames)-1 {
-					builder.WriteString("\n")
-				}
-			}
-		}
-	}
-
-	return []byte(builder.String()), nil
-}
-
-// Save saves the configuration to the specified file path with proper formatting
+// Save saves the configuration to the specified file path using go-toml encoder
+// with SetArraysMultiline to format arrays with one element per line
 func (c *Config) Save(configFile string) error {
 	if configFile == "" {
 		home, err := os.UserHomeDir()
@@ -240,12 +201,23 @@ func (c *Config) Save(configFile string) error {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	data, err := c.formatTOML()
-	if err != nil {
-		return fmt.Errorf("failed to format TOML: %w", err)
+	// Use go-toml encoder with SetArraysMultiline for automatic formatting
+	var buf bytes.Buffer
+	encoder := toml.NewEncoder(&buf)
+	// ArraysWithOneElementPerLine equivalent - puts each array element on its own line
+	encoder.SetArraysMultiline(true)
+
+	if err := encoder.Encode(c); err != nil {
+		return fmt.Errorf("failed to encode TOML: %w", err)
 	}
 
-	if err := os.WriteFile(configFile, data, 0644); err != nil {
+	// Post-process to remove empty [groups] header that encoder adds for nested tables
+	// This is needed because [groups.default] implicitly creates [groups] in TOML
+	output := buf.String()
+	// Remove the standalone [groups] line that appears before [groups.<name>]
+	output = strings.Replace(output, "[groups]\n[groups.", "[groups.", -1)
+
+	if err := os.WriteFile(configFile, []byte(output), 0644); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
