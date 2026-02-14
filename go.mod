@@ -4,9 +4,9 @@ go 1.25.6
 
 require (
 	github.com/go-git/go-git/v5 v5.16.4
-	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/schollz/progressbar/v3 v3.19.0
 	github.com/spf13/cobra v1.10.2
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

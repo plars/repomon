@@ -14,13 +14,13 @@ func TestLoad(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	validConfig := `
-[groups.default]
-repos = ["/path/to/repo1", "/path/to/repo2"]
-
-[defaults]
-days = 7
+days: 7
+default:
+  repos:
+    - /path/to/repo1
+    - /path/to/repo2
 `
-	validConfigPath := filepath.Join(tempDir, "valid.toml")
+	validConfigPath := filepath.Join(tempDir, "valid.yaml")
 	if err := os.WriteFile(validConfigPath, []byte(validConfig), 0644); err != nil {
 		t.Fatalf("Failed to write valid config: %v", err)
 	}
@@ -30,8 +30,8 @@ days = 7
 		t.Fatalf("Failed to load valid config: %v", err)
 	}
 
-	if cfg.Defaults.Days != 7 {
-		t.Errorf("Expected days=7, got %d", cfg.Defaults.Days)
+	if cfg.Days != 7 {
+		t.Errorf("Expected days=7, got %d", cfg.Days)
 	}
 
 	// Updated call to GetRepos (Line 37)
@@ -52,10 +52,11 @@ days = 7
 	}
 
 	noDefaultsConfig := `
-[groups.default]
-repos = ["/path/to/repo"]
+default:
+  repos:
+    - /path/to/repo
 `
-	noDefaultsConfigPath := filepath.Join(tempDir, "no-defaults.toml")
+	noDefaultsConfigPath := filepath.Join(tempDir, "no-defaults.yaml")
 	if err := os.WriteFile(noDefaultsConfigPath, []byte(noDefaultsConfig), 0644); err != nil {
 		t.Fatalf("Failed to write no-defaults config: %v", err)
 	}
@@ -65,30 +66,30 @@ repos = ["/path/to/repo"]
 		t.Fatalf("Failed to load no-defaults config: %v", err)
 	}
 
-	if cfg.Defaults.Days != 1 {
-		t.Errorf("Expected default days=1, got %d", cfg.Defaults.Days)
+	if cfg.Days != 1 {
+		t.Errorf("Expected default days=1, got %d", cfg.Days)
 	}
 
-	_, err = Load(filepath.Join(tempDir, "non-existent.toml"))
+	_, err = Load(filepath.Join(tempDir, "non-existent.yaml"))
 	if err == nil {
 		t.Error("Expected error for non-existent config file")
 	}
 
-	invalidTOMLPath := filepath.Join(tempDir, "invalid.toml")
-	if err := os.WriteFile(invalidTOMLPath, []byte("invalid toml ["), 0644); err != nil {
-		t.Fatalf("Failed to write invalid TOML: %v", err)
+	invalidYAMLPath := filepath.Join(tempDir, "invalid.yaml")
+	if err := os.WriteFile(invalidYAMLPath, []byte("invalid yaml: ["), 0644); err != nil {
+		t.Fatalf("Failed to write invalid YAML: %v", err)
 	}
 
-	_, err = Load(invalidTOMLPath)
+	_, err = Load(invalidYAMLPath)
 	if err == nil {
-		t.Error("Expected error for invalid TOML")
+		t.Error("Expected error for invalid YAML")
 	}
 }
 
 func TestLoadDefaultPath(t *testing.T) {
 	cfg, err := Load("")
 	if err == nil {
-		if cfg.Defaults.Days <= 0 {
+		if cfg.Days <= 0 {
 			t.Error("Default days should be positive")
 		}
 	} else {
@@ -172,7 +173,7 @@ func TestParseRepoString(t *testing.T) {
 
 func TestGetRepos(t *testing.T) {
 	cfg := &Config{
-		Defaults: Defaults{Days: 7},
+		Days: 7,
 		Groups: map[string]*Group{
 			"default": {
 				Repos: []string{

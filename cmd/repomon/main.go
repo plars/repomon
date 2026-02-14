@@ -91,7 +91,7 @@ showing the most recent commits to each repository in an easy-to-read format.`,
 	}
 
 	// Bind persistent flags to rootOptions
-	rootCmd.PersistentFlags().StringVarP(&rootOpts.configFile, "config", "c", "", "path to config file (default ~/.config/repomon/config.toml)")
+	rootCmd.PersistentFlags().StringVarP(&rootOpts.configFile, "config", "c", "", "path to config file (default ~/.config/repomon/config.yaml)")
 	rootCmd.PersistentFlags().StringVarP(&rootOpts.group, "group", "g", "", "repository group to use (default: 'default')")
 	// Add run-specific flags to rootCmd so they work without 'run' subcommand
 	rootCmd.Flags().AddFlagSet(runCmd.Flags())
@@ -141,13 +141,13 @@ func (r *repomonRunner) executeRun(ctx context.Context, args []string, runOpts *
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	// Only override cfg.Defaults.Days if runOpts.days was explicitly changed from its default (1)
+	// Only override cfg.Days if runOpts.days was explicitly changed from its default (1)
 	// and is different from the config's default.
-	if runOpts.days != 1 || cfg.Defaults.Days == 0 {
+	if runOpts.days != 1 || cfg.Days == 0 {
 		if runOpts.days != 1 {
-			cfg.Defaults.Days = runOpts.days
-		} else if cfg.Defaults.Days == 0 {
-			cfg.Defaults.Days = 1
+			cfg.Days = runOpts.days
+		} else if cfg.Days == 0 {
+			cfg.Days = 1
 		}
 	}
 
@@ -167,7 +167,7 @@ func (r *repomonRunner) executeRun(ctx context.Context, args []string, runOpts *
 	}
 
 	monitor := r.newGitMonitor(repos)
-	monitor.SetDays(cfg.Defaults.Days)
+	monitor.SetDays(cfg.Days)
 	results, err := monitor.GetRecentCommits(ctx)
 	if err != nil {
 		logger.Error("Failed to get recent commits", "error", err)
@@ -255,7 +255,7 @@ func (r *repomonRunner) executeAdd(args []string, rootOpts *rootOptions) error {
 		if err != nil {
 			return fmt.Errorf("failed to get home directory: %w", err)
 		}
-		configPath = os.ExpandEnv(filepath.Join(home, ".config", "repomon", "config.toml"))
+		configPath = os.ExpandEnv(filepath.Join(home, ".config", "repomon", "config.yaml"))
 	} else {
 		configPath = os.ExpandEnv(configPath)
 	}

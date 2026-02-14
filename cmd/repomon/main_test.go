@@ -82,12 +82,12 @@ func TestExecuteList(t *testing.T) {
 		},
 		{
 			name:    "Config file not found",
-			loadErr: fmt.Errorf("config file not found: /path/does/not/exist/config.toml"),
+			loadErr: fmt.Errorf("config file not found: /path/does/not/exist/config.yaml"),
 			rootOpts: &rootOptions{
-				configFile: "/path/does/not/exist/config.toml",
+				configFile: "/path/does/not/exist/config.yaml",
 				group:      "default",
 			},
-			expectedError: "failed to load configuration: config file not found: /path/does/not/exist/config.toml",
+			expectedError: "failed to load configuration: config file not found: /path/does/not/exist/config.yaml",
 		},
 		{
 			name: "Config file is empty (no default group)",
@@ -147,7 +147,7 @@ func TestExecuteRun(t *testing.T) {
 		{
 			name: "Successful run",
 			cfg: &config.Config{
-				Defaults: config.Defaults{Days: 1},
+				Days: 1,
 				Groups: map[string]*config.Group{
 					"default": {Repos: []string{"/path/to/repo"}},
 				},
@@ -170,7 +170,7 @@ func TestExecuteRun(t *testing.T) {
 			loadErr: fmt.Errorf("file not found"),
 			runOpts: &runOptions{days: 1},
 			rootOpts: &rootOptions{
-				configFile: "missing.toml",
+				configFile: "missing.yaml",
 				group:      "default",
 			},
 			expectedError: "failed to load configuration: file not found",
@@ -251,10 +251,11 @@ func TestIntegration(t *testing.T) {
 	runGit("add", ".")
 	runGit("commit", "-m", "first")
 
-	cfgPath := filepath.Join(tmpDir, "config.toml")
+	cfgPath := filepath.Join(tmpDir, "config.yaml")
 	cfgContent := fmt.Sprintf(`
-[groups.default]
-repos = ["%s"]
+default:
+  repos:
+    - %s
 `, repoPath)
 	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0644); err != nil {
 		t.Fatal(err)

@@ -1,35 +1,30 @@
 package config
 
 import (
-	"bytes"
 	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/pelletier/go-toml/v2"
 	"log/slog"
+	"gopkg.in/yaml.v3"
 )
 
 // Config represents the application configuration
+// Uses flat YAML structure: days at top-level, groups as sections
 type Config struct {
-	Defaults Defaults          `toml:"defaults"`
-	Groups   map[string]*Group `toml:"groups"`
+	Days   int               `yaml:"days"`
+	Groups map[string]*Group `yaml:",inline"`
 }
 
 type Group struct {
-	Repos []string `toml:"repos"`
-}
-
-type Defaults struct {
-	Days int `toml:"days"`
+	Repos []string `yaml:"repos"`
 }
 
 type Repo struct {
-	Name string `toml:"name"`
-	Path string `toml:"path,omitempty"`
-	URL  string `toml:"url,omitempty"`
+	Name string `yaml:"name"`
+	Path string `yaml:"path,omitempty"`
+	URL  string `yaml:"url,omitempty"`
 }
 
 // parseRepoString parses a repository string and extracts name, path, and URL
@@ -184,77 +179,71 @@ func (c *Config) AddRepo(repoStr, groupName string) error {
 	return nil
 }
 
-// Save saves the configuration to the specified file path using go-toml encoder
-// with SetArraysMultiline to format arrays with one element per line
+// Save saves the configuration to the specified file path using YAML encoder
+// Writes flat format: days at top-level, groups as groupname sections
 func (c *Config) Save(configFile string) error {
-	if configFile == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("failed to get home directory: %w", err)
-		}
-		configFile = filepath.Join(home, ".config", "repomon", "config.toml")
-	}
+    if configFile == "" {
+        home, err := os.UserHomeDir()
+        if err != nil {
+            return fmt.Errorf("failed to get home directory: %w", err)
+        }
+        configFile = filepath.Join(home, ".config", "repomon", "config.yaml")
+    }
 
-	// Create directory if it doesn't exist
-	configDir := filepath.Dir(configFile)
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		return fmt.Errorf("failed to create config directory: %w", err)
-	}
+    // Create directory if it doesn't exist
+    configDir := filepath.Dir(configFile)
+    if err := os.MkdirAll(configDir, 0755); err != nil {
+        return fmt.Errorf("failed to create config directory: %w", err)
+    }
 
-	// Use go-toml encoder with SetArraysMultiline for automatic formatting
-	var buf bytes.Buffer
-	encoder := toml.NewEncoder(&buf)
-	// ArraysWithOneElementPerLine equivalent - puts each array element on its own line
-	encoder.SetArraysMultiline(true)
+    f, err := os.Create(configFile)
+    if err != nil {
+        return fmt.Errorf("failed to create config file: %w", err)
+    }
+    defer f.Close()
 
-	if err := encoder.Encode(c); err != nil {
-		return fmt.Errorf("failed to encode TOML: %w", err)
-	}
+    enc := yaml.NewEncoder(f)
+    defer enc.Close()
+    if err := enc.Encode(c); err != nil {
+        return fmt.Errorf("failed to encode config: %w", err)
+    }
 
-	// Post-process to remove empty [groups] header that encoder adds for nested tables
-	// This is needed because [groups.default] implicitly creates [groups] in TOML
-	output := buf.String()
-	// Remove the standalone [groups] line that appears before [groups.<name>]
-	output = strings.Replace(output, "[groups]\n[groups.", "[groups.", -1)
-
-	if err := os.WriteFile(configFile, []byte(output), 0644); err != nil {
-		return fmt.Errorf("failed to write config file: %w", err)
-	}
-
-	slog.Debug("Configuration saved successfully", "file", configFile)
-	return nil
+    slog.Debug("Configuration saved successfully", "file", configFile)
+    return nil
 }
 
-// Load loads the configuration from the specified file path
+// Load the configuration from the specified YAML file path
 func Load(configFile string) (*Config, error) {
-	if configFile == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get home directory: %w", err)
-		}
-		configFile = filepath.Join(home, ".config", "repomon", "config.toml")
-	}
+    if configFile == "" {
+        home, err := os.UserHomeDir()
+        if err != nil {
+            return nil, fmt.Errorf("failed to get home directory: %w", err)
+        }
+        configFile = filepath.Join(home, ".config", "repomon", "config.yaml")
+    }
 
-	// Check if config file exists
-	if _, err := os.Stat(configFile); os.IsNotExist(err) {
-		return nil, fmt.Errorf("config file not found: %s", configFile)
-	}
+    // Check if config file exists
+    if _, err := os.Stat(configFile); os.IsNotExist(err) {
+        return nil, fmt.Errorf("config file not found: %s", configFile)
+    }
 
-	data, err := os.ReadFile(configFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read config file: %w", err)
-	}
+    data, err := os.ReadFile(configFile)
+    if err != nil {
+        return nil, fmt.Errorf("failed to read config file: %w", err)
+    }
 
-	var cfg Config
-	if err := toml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse TOML: %w", err)
-	}
+    var cfg Config
+    if err := yaml.Unmarshal(data, &cfg); err != nil {
+        return nil, fmt.Errorf("failed to parse YAML: %w", err)
+    }
 
-	// Set default values if not specified
-	if cfg.Defaults.Days == 0 {
-		cfg.Defaults.Days = 1
-	}
+    if cfg.Days == 0 {
+        cfg.Days = 1
+    }
+    if cfg.Groups == nil {
+        cfg.Groups = make(map[string]*Group)
+    }
 
-	slog.Debug("Configuration loaded successfully", "file", configFile, "groups", len(cfg.Groups))
-	return &cfg, nil
+    slog.Debug("Configuration loaded successfully", "file", configFile, "groups", len(cfg.Groups))
+    return &cfg, nil
 }
