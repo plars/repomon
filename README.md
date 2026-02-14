@@ -21,25 +21,21 @@ go install github.com/plars/repomon/cmd/repomon@latest
 
 ```bash
 mkdir -p ~/.config/repomon
-cat > ~/.config/repomon/config.toml << 'EOF'
-[defaults]
-days = 7
+cat > ~/.config/repomon/config.yaml << 'EOF'
+days: 7
 
-[groups.default]
-repos = [
-    "/home/user/projects/my-project",
-    "https://github.com/kubernetes/kubernetes",
-]
+default:
+  repos:
+    - "/home/user/projects/my-project"
+    - "https://github.com/kubernetes/kubernetes"
 
-[groups.work]
-repos = [
-    "https://github.com/go-git/go-git",
-]
+work:
+  repos:
+    - "https://github.com/go-git/go-git"
 
-[groups.personal]
-repos = [
-    "~/projects/dotfiles",
-]
+personal:
+  repos:
+    - "~/projects/dotfiles"
 EOF
 ```
 
@@ -53,7 +49,7 @@ repomon
 repomon -g work
 
 # Custom config file
-repomon -c /path/to/config.toml
+repomon -c /path/to/config.yaml
 
 # Last 3 days instead of default
 repomon -d 3
@@ -61,36 +57,32 @@ repomon -d 3
 
 ## ⚙ Configuration
 
-Configuration is done via TOML file. Use `~/.config/repomon/config.toml` or specify with `-c` flag.
+Configuration is done via YAML file. Use `~/.config/repomon/config.yaml` or specify with `-c` flag.
 
 Repository names are automatically extracted from paths/URLs. No manual naming required.
 
 ### Format
 
-```toml
-[defaults]
-days = 7  # Number of days to look back
+```yaml
+days: 7  # Number of days to look back
 
-[groups.default]
-repos = [
-    "/home/user/projects/my-project",           # Local - auto-named "my-project"
-    "https://github.com/go-git/go-git",        # Remote - auto-named "go-git"
-    "git@github.com:plars/repomon.git",      # Remote SSH - auto-named "repomon"
-    "~/projects/work-app",                     # Local with ~ - auto-named "work-app"
-    "https://gitlab.com/company/project.git",   # Remote GitLab - auto-named "project"
-]
+default:
+  repos:
+    - "/home/user/projects/my-project"           # Local - auto-named "my-project"
+    - "https://github.com/go-git/go-git"        # Remote - auto-named "go-git"
+    - "git@github.com:plars/repomon.git"      # Remote SSH - auto-named "repomon"
+    - "~/projects/work-app"                     # Local with ~ - auto-named "work-app"
+    - "https://gitlab.com/company/project.git"   # Remote GitLab - auto-named "project"
 
-[groups.work]
-repos = [
-    "https://github.com/company/backend",
-    "https://github.com/company/frontend",
-]
+work:
+  repos:
+    - "https://github.com/company/backend"
+    - "https://github.com/company/frontend"
 
-[groups.personal]
-repos = [
-    "~/projects/dotfiles",
-    "https://github.com/user/hobby-project",
-]
+personal:
+  repos:
+    - "~/projects/dotfiles"
+    - "https://github.com/user/hobby-project"
 ```
 
 ### Auto-Naming Rules
@@ -112,13 +104,13 @@ repomon -g work
 repomon --group personal
 
 # Specify config file
-repomon -c ~/.config/repomon/config.toml
+repomon -c ~/.config/repomon/config.yaml
 
 # Custom time range
 repomon -d 14
 
 # Combine options
-repomon -c /custom/config.toml -g work -d 30
+repomon -c /custom/config.yaml -g work -d 30
 ```
 
 ### Adding Repositories
@@ -152,12 +144,12 @@ repomon list
 repomon list -g work
 
 # List from custom config
-repomon list -c /path/to/config.toml
+repomon list -c /path/to/config.yaml
 ```
 
 ### CLI Options
 
-- `-c, --config`: Path to configuration file (default: `~/.config/repomon/config.toml`)
+- `-c, --config`: Path to configuration file (default: `~/.config/repomon/config.yaml`)
 - `-d, --days`: Number of days to look back (default: 1)
 - `-g, --group`: Repository group to use (default: 'default')
 - `--debug`: Enable debug logging

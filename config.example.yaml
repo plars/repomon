@@ -1,0 +1,15 @@
+# Sample configuration file for repomon
+# Place this at ~/.config/repomon/config.yaml or specify with -c flag
+
+days: 7  # Number of days to look back in history
+
+default:
+  repos:
+    - "/home/user/projects/my-project"           # Local - auto-named "my-project"
+    - "~/code/another-repo"                      # Local with ~ - auto-named "another-repo"
+    - "https://github.com/plars/repomon"         # Remote - auto-named "repomon"
+
+work:
+  repos:
+    - "git@github.com:company/private-repo.git"  # Remote SSH - auto-named "private-repo"
+    - "https://gitlab.com/company/project.git"   # Remote GitLab - auto-named "project"
