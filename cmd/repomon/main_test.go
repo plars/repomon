@@ -187,6 +187,70 @@ func TestExecuteRun(t *testing.T) {
 			rootOpts:      &rootOptions{group: "default"},
 			expectedError: "failed to get recent commits: git error",
 		},
+		{
+			name: "Run with days override",
+			cfg: &config.Config{
+				Days: 1,
+				Groups: map[string]*config.Group{
+					"default": {Repos: []string{"/path/to/repo"}},
+				},
+			},
+			monitorResults: []git.RepoResult{
+				{
+					Repo: config.Repo{Name: "repo", Path: "/path/to/repo"},
+					Commits: []git.Commit{
+						{Message: "New commit", Author: "Test User"},
+					},
+				},
+			},
+			formatOutput:   "Report with new commit",
+			runOpts:        &runOptions{days: 7},
+			rootOpts:       &rootOptions{group: "default"},
+			expectedOutput: "Report with new commit",
+		},
+		{
+			name: "Run with specific group",
+			cfg: &config.Config{
+				Days: 1,
+				Groups: map[string]*config.Group{
+					"work":     {Repos: []string{"/path/to/work-repo"}},
+					"personal": {Repos: []string{"/path/to/personal-repo"}},
+				},
+			},
+			monitorResults: []git.RepoResult{
+				{
+					Repo: config.Repo{Name: "work-repo", Path: "/path/to/work-repo"},
+					Commits: []git.Commit{
+						{Message: "Work commit", Author: "Test User"},
+					},
+				},
+			},
+			formatOutput:   "Work report",
+			runOpts:        &runOptions{days: 1},
+			rootOpts:       &rootOptions{group: "work"},
+			expectedOutput: "Work report",
+		},
+		{
+			name: "Run with debug flag",
+			cfg: &config.Config{
+				Days: 1,
+				Groups: map[string]*config.Group{
+					"default": {Repos: []string{"/path/to/repo"}},
+				},
+			},
+			monitorResults: []git.RepoResult{
+				{
+					Repo: config.Repo{Name: "repo", Path: "/path/to/repo"},
+					Commits: []git.Commit{
+						{Message: "Debug commit", Author: "Test User"},
+					},
+				},
+			},
+			formatOutput:   "Debug report",
+			runOpts:        &runOptions{days: 1, debug: true},
+			rootOpts:       &rootOptions{group: "default"},
+			expectedOutput: "Debug report",
+		},
 	}
 
 	for _, tt := range tests {
@@ -220,6 +284,116 @@ func TestExecuteRun(t *testing.T) {
 				}
 				if outBuf.String() != tt.expectedOutput {
 					t.Errorf("Expected output %q, got %q", tt.expectedOutput, outBuf.String())
+				}
+			}
+		})
+	}
+}
+
+func TestExecuteAdd(t *testing.T) {
+	tests := []struct {
+		name           string
+		cfg            *config.Config
+		loadErr        error
+		addRepoErr     error
+		saveErr        error
+		args           []string
+		rootOpts       *rootOptions
+		expectedOutput string
+		expectedError  string
+	}{
+		{
+			name: "Add repository successfully",
+			cfg: &config.Config{
+				Days: 1,
+				Groups: map[string]*config.Group{
+					"default": {Repos: []string{}},
+				},
+			},
+			args:           []string{"/path/to/new-repo"},
+			rootOpts:       &rootOptions{group: "default"},
+			expectedOutput: "Added '/path/to/new-repo' to group 'default'",
+		},
+		{
+			name: "Add to non-existent group creates new group",
+			cfg: &config.Config{
+				Days: 1,
+				Groups: map[string]*config.Group{
+					"default": {Repos: []string{"/existing/repo"}},
+				},
+			},
+			args:           []string{"/path/to/work-repo"},
+			rootOpts:       &rootOptions{group: "work"},
+			expectedOutput: "Added '/path/to/work-repo' to group 'work'",
+		},
+		{
+			name:          "Add with no args fails",
+			cfg:           &config.Config{Groups: make(map[string]*config.Group)},
+			args:          []string{},
+			rootOpts:      &rootOptions{group: "default"},
+			expectedError: "repository argument is required",
+		},
+		{
+			name:    "Config load failure",
+			loadErr: fmt.Errorf("config file not found"),
+			args:    []string{"/path/to/repo"},
+			rootOpts: &rootOptions{
+				configFile: "missing.yaml",
+				group:      "default",
+			},
+			expectedError: "failed to load configuration",
+		},
+		{
+			name: "Add duplicate repository fails",
+			cfg: &config.Config{
+				Days: 1,
+				Groups: map[string]*config.Group{
+					"default": {Repos: []string{"/existing/repo"}},
+				},
+			},
+			args:          []string{"/existing/repo"},
+			rootOpts:      &rootOptions{group: "default"},
+			expectedError: "already exists",
+		},
+		{
+			name: "Add to group with temp config path",
+			cfg: &config.Config{
+				Days: 1,
+				Groups: map[string]*config.Group{
+					"default": {Repos: []string{}},
+				},
+			},
+			args:           []string{"/path/to/repo"},
+			rootOpts:       &rootOptions{configFile: "", group: "default"},
+			expectedOutput: "Added '/path/to/repo' to group 'default'",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			outBuf := new(bytes.Buffer)
+			errBuf := new(bytes.Buffer)
+			runner := newDefaultRunner(outBuf, errBuf)
+
+			runner.loadConfig = func(path string) (*config.Config, error) {
+				if tt.loadErr != nil {
+					return nil, tt.loadErr
+				}
+				return tt.cfg, nil
+			}
+
+			err := runner.executeAdd(tt.args, tt.rootOpts)
+
+			if tt.expectedError != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.expectedError) {
+					t.Errorf("Expected error containing %q, got %v", tt.expectedError, err)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				}
+				if !strings.Contains(outBuf.String(), tt.expectedOutput) {
+					t.Errorf("Expected output containing %q, got %q", tt.expectedOutput, outBuf.String())
 				}
 			}
 		})

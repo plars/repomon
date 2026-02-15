@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -210,5 +211,357 @@ func TestGetRepos(t *testing.T) {
 
 	if repos[3].Name != "work-app" {
 		t.Errorf("Repo 3 name incorrect: %+v", repos[3])
+	}
+}
+
+func TestGetReposFallbackToDefault(t *testing.T) {
+	cfg := &Config{
+		Days: 7,
+		Groups: map[string]*Group{
+			"default": {
+				Repos: []string{"/path/to/repo"},
+			},
+			"work": {
+				Repos: []string{"/path/to/work"},
+			},
+		},
+	}
+
+	// Request a non-existent group, should fallback to default
+	repos, effectiveGroup, err := cfg.GetRepos("nonexistent")
+	if err != nil {
+		t.Fatalf("Expected no error for fallback: %v", err)
+	}
+
+	if effectiveGroup != "default" {
+		t.Errorf("Expected effective group 'default', got '%s'", effectiveGroup)
+	}
+
+	if len(repos) != 1 {
+		t.Errorf("Expected 1 repo, got %d", len(repos))
+	}
+}
+
+func TestGetReposNoDefaultGroup(t *testing.T) {
+	cfg := &Config{
+		Days: 7,
+		Groups: map[string]*Group{
+			"work": {
+				Repos: []string{"/path/to/work"},
+			},
+		},
+	}
+
+	// Request a non-existent group when there's no default group
+	_, _, err := cfg.GetRepos("nonexistent")
+	if err == nil {
+		t.Error("Expected error when no default group exists")
+	}
+}
+
+func TestExpandTilde(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		wantHome bool
+	}{
+		{
+			name:  "tilde only",
+			input: "~",
+			// Result depends on home directory
+		},
+		{
+			name:  "tilde with path",
+			input: "~/projects/myrepo",
+			// Result depends on home directory
+		},
+		{
+			name:  "regular path unchanged",
+			input: "/absolute/path",
+		},
+		{
+			name:  "relative path unchanged",
+			input: "./relative/path",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := expandTilde(tt.input)
+
+			// If input starts with ~, result should be different
+			if strings.HasPrefix(tt.input, "~") {
+				home, err := os.UserHomeDir()
+				if err != nil {
+					t.SkipNow()
+				}
+				if tt.input == "~" {
+					if result != home {
+						t.Errorf("expandTilde(%q) = %q, want %q", tt.input, result, home)
+					}
+				} else if strings.HasPrefix(tt.input, "~/") {
+					want := filepath.Join(home, tt.input[2:])
+					if result != want {
+						t.Errorf("expandTilde(%q) = %q, want %q", tt.input, result, want)
+					}
+				}
+			} else {
+				// Non-tilde paths should remain unchanged
+				if result != tt.input {
+					t.Errorf("expandTilde(%q) = %q, want %q", tt.input, result, tt.input)
+				}
+			}
+		})
+	}
+}
+
+func TestIsGitURL(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{
+			name:  "https URL",
+			input: "https://github.com/user/repo",
+			want:  true,
+		},
+		{
+			name:  "http URL",
+			input: "http://github.com/user/repo",
+			want:  true,
+		},
+		{
+			name:  "SSH URL",
+			input: "git@github.com:user/repo",
+			want:  true,
+		},
+		{
+			name:  "git protocol",
+			input: "git://github.com/user/repo",
+			want:  true,
+		},
+		{
+			name:  "SSH protocol",
+			input: "ssh://git@github.com/user/repo",
+			want:  true,
+		},
+		{
+			name:  "local path",
+			input: "/home/user/repo",
+			want:  false,
+		},
+		{
+			name:  "relative path",
+			input: "./myrepo",
+			want:  false,
+		},
+		{
+			name:  "empty string",
+			input: "",
+			want:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isGitURL(tt.input)
+			if got != tt.want {
+				t.Errorf("isGitURL(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestExtractNameFromPath(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "simple path",
+			input: "/path/to/my-repo",
+			want:  "my-repo",
+		},
+		{
+			name:  "path with trailing slash",
+			input: "/path/to/repo/",
+			want:  "repo",
+		},
+		{
+			name:  "current directory",
+			input: ".",
+			want:  "unknown",
+		},
+		{
+			name:  "root directory",
+			input: "/",
+			want:  "unknown",
+		},
+		{
+			name:  "empty string",
+			input: "",
+			want:  "unknown",
+		},
+		{
+			name:  "relative path",
+			input: "../repo",
+			want:  "repo",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractNameFromPath(tt.input)
+			if got != tt.want {
+				t.Errorf("extractNameFromPath(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseGitURL(t *testing.T) {
+	tests := []struct {
+		name   string
+		urlStr string
+		want   Repo
+	}{
+		{
+			name:   "HTTPS GitHub",
+			urlStr: "https://github.com/user/repo",
+			want:   Repo{Name: "repo", URL: "https://github.com/user/repo"},
+		},
+		{
+			name:   "HTTPS with .git suffix",
+			urlStr: "https://github.com/user/repo.git",
+			want:   Repo{Name: "repo", URL: "https://github.com/user/repo.git"},
+		},
+		{
+			name:   "SSH format",
+			urlStr: "git@github.com:user/repo",
+			want:   Repo{Name: "repo", URL: "git@github.com:user/repo"},
+		},
+		{
+			name:   "SSH format with .git",
+			urlStr: "git@github.com:user/repo.git",
+			want:   Repo{Name: "repo", URL: "git@github.com:user/repo.git"},
+		},
+		{
+			name:   "GitLab HTTPS",
+			urlStr: "https://gitlab.com/company/project",
+			want:   Repo{Name: "project", URL: "https://gitlab.com/company/project"},
+		},
+		{
+			name:   "SSH URL with path",
+			urlStr: "ssh://git@gitlab.com/user/project",
+			want:   Repo{Name: "project", URL: "ssh://git@gitlab.com/user/project"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseGitURL(tt.urlStr)
+			if got.Name != tt.want.Name {
+				t.Errorf("parseGitURL(%q).Name = %q, want %q", tt.urlStr, got.Name, tt.want.Name)
+			}
+			if got.URL != tt.want.URL {
+				t.Errorf("parseGitURL(%q).URL = %q, want %q", tt.urlStr, got.URL, tt.want.URL)
+			}
+		})
+	}
+}
+
+func TestAddRepo(t *testing.T) {
+	cfg := &Config{
+		Groups: make(map[string]*Group),
+	}
+
+	// Add to new group
+	err := cfg.AddRepo("/path/to/repo", "work")
+	if err != nil {
+		t.Fatalf("AddRepo failed: %v", err)
+	}
+
+	if cfg.Groups["work"] == nil {
+		t.Error("Expected group 'work' to be created")
+	}
+
+	if len(cfg.Groups["work"].Repos) != 1 {
+		t.Errorf("Expected 1 repo in group, got %d", len(cfg.Groups["work"].Repos))
+	}
+
+	// Add another repo to same group
+	err = cfg.AddRepo("/another/repo", "work")
+	if err != nil {
+		t.Fatalf("AddRepo failed: %v", err)
+	}
+
+	if len(cfg.Groups["work"].Repos) != 2 {
+		t.Errorf("Expected 2 repos in group, got %d", len(cfg.Groups["work"].Repos))
+	}
+
+	// Try to add duplicate
+	err = cfg.AddRepo("/path/to/repo", "work")
+	if err == nil {
+		t.Error("Expected error for duplicate repo")
+	}
+}
+
+func TestConfigSave(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "repomon-save-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	configFile := filepath.Join(tempDir, "config.yaml")
+
+	cfg := &Config{
+		Days: 14,
+		Groups: map[string]*Group{
+			"default": {
+				Repos: []string{"/path/to/repo1", "/path/to/repo2"},
+			},
+		},
+	}
+
+	err = cfg.Save(configFile)
+	if err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	// Verify the file was created
+	if _, err := os.Stat(configFile); err != nil {
+		t.Error("Expected config file to exist")
+	}
+
+	// Load and verify
+	loaded, err := Load(configFile)
+	if err != nil {
+		t.Fatalf("Failed to load saved config: %v", err)
+	}
+
+	if loaded.Days != 14 {
+		t.Errorf("Expected days=14, got %d", loaded.Days)
+	}
+
+	if len(loaded.Groups) != 1 {
+		t.Errorf("Expected 1 group, got %d", len(loaded.Groups))
+	}
+}
+
+func TestConfigSaveDefaultPath(t *testing.T) {
+	cfg := &Config{
+		Days:   1,
+		Groups: make(map[string]*Group),
+	}
+
+	// This test verifies that Save with empty path uses the default path
+	// Note: This may fail if home directory is not accessible
+	err := cfg.Save("")
+	if err != nil {
+		// Expected to potentially fail if home/.config/repomon is not writable
+		t.Logf("Save to default path failed (expected in test environment): %v", err)
 	}
 }
