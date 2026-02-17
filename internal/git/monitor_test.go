@@ -2,8 +2,10 @@ package git
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -275,6 +277,114 @@ func TestMonitor_getRepoCommits_NoPathOrURL(t *testing.T) {
 	if err == nil {
 		t.Error("Expected error for repo with no path or URL")
 	}
+}
+
+// mockGitCloner is a mock implementation of GitCloner for testing
+type mockGitCloner struct {
+	cloneErr error
+	cloneDir string // Directory to use as the "cloned" repo
+}
+
+func (m *mockGitCloner) Clone(ctx context.Context, repoURL, targetDir string) error {
+	if m.cloneErr != nil {
+		return m.cloneErr
+	}
+	// If a cloneDir is provided, copy its contents to targetDir
+	if m.cloneDir != "" {
+		return copyDir(m.cloneDir, targetDir)
+	}
+	return nil
+}
+
+// copyDir recursively copies a directory
+func copyDir(src, dst string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		relPath, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		dstPath := filepath.Join(dst, relPath)
+		if info.IsDir() {
+			return os.MkdirAll(dstPath, info.Mode())
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(dstPath, data, info.Mode())
+	})
+}
+
+func TestMonitor_getRepoCommits_RemoteRepo(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "repomon-remote-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create a source repo that will be "cloned"
+	sourceRepoPath := filepath.Join(tempDir, "source-repo")
+	if err := os.MkdirAll(sourceRepoPath, 0755); err != nil {
+		t.Fatalf("Failed to create source repo dir: %v", err)
+	}
+	if err := initTestRepo(sourceRepoPath); err != nil {
+		t.Fatalf("Failed to initialize source repo: %v", err)
+	}
+
+	// Create a mock cloner that copies from our source repo
+	mockCloner := &mockGitCloner{
+		cloneDir: sourceRepoPath,
+	}
+
+	monitor := NewMonitorWithCloner([]config.Repo{}, mockCloner)
+	repo := config.Repo{Name: "remote-repo", URL: "https://github.com/example/test.git"}
+
+	commits, err := monitor.getRepoCommits(context.Background(), repo)
+	if err != nil {
+		t.Fatalf("Failed to get commits from remote repo: %v", err)
+	}
+
+	if len(commits) == 0 {
+		t.Error("Expected at least one commit from remote repo")
+	}
+}
+
+func TestMonitor_getRepoCommits_RemoteRepo_CloneError(t *testing.T) {
+	mockCloner := &mockGitCloner{
+		cloneErr: fmt.Errorf("authentication failed"),
+	}
+
+	monitor := NewMonitorWithCloner([]config.Repo{}, mockCloner)
+	repo := config.Repo{Name: "remote-repo", URL: "https://github.com/example/private.git"}
+
+	_, err := monitor.getRepoCommits(context.Background(), repo)
+	if err == nil {
+		t.Error("Expected error when clone fails")
+	}
+	if !strings.Contains(err.Error(), "authentication failed") {
+		t.Errorf("Expected error to contain 'authentication failed', got: %v", err)
+	}
+}
+
+func TestNewMonitorWithCloner(t *testing.T) {
+	mockCloner := &mockGitCloner{}
+	repos := []config.Repo{{Name: "test", Path: "/path/to/repo"}}
+
+	monitor := NewMonitorWithCloner(repos, mockCloner)
+	if monitor == nil {
+		t.Fatal("NewMonitorWithCloner returned nil")
+	}
+	if monitor.cloner != mockCloner {
+		t.Error("Monitor cloner was not set correctly")
+	}
+}
+
+func TestRealGitCloner_Interface(t *testing.T) {
+	// Ensure RealGitCloner implements GitCloner interface
+	var _ GitCloner = &RealGitCloner{}
 }
 
 // Helper function to initialize a test git repository using go-git

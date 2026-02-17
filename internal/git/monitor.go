@@ -9,11 +9,12 @@ import (
 	"sync"
 	"time"
 
+	"log/slog"
+
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/plars/repomon/internal/config"
 	"github.com/schollz/progressbar/v3"
-	"log/slog"
 )
 
 // Commit represents a git commit
@@ -31,9 +32,28 @@ type RepoResult struct {
 	Error   error
 }
 
+// GitCloner defines the interface for cloning git repositories
+type GitCloner interface {
+	Clone(ctx context.Context, repoURL, targetDir string) error
+}
+
+// RealGitCloner implements GitCloner using the git binary
+type RealGitCloner struct{}
+
+func (c *RealGitCloner) Clone(ctx context.Context, repoURL, targetDir string) error {
+	args := []string{"clone", repoURL, targetDir, "--depth", "100", "--no-tags"}
+	cmd := exec.CommandContext(ctx, "git", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git clone failed: %w: %s", err, output)
+	}
+	return nil
+}
+
 type Monitor struct {
-	repos []config.Repo
-	days  int
+	repos  []config.Repo
+	days   int
+	cloner GitCloner
 }
 
 func NewMonitor(cfg *config.Config) *Monitor {
@@ -47,8 +67,18 @@ func NewMonitor(cfg *config.Config) *Monitor {
 
 func NewMonitorWithRepos(repos []config.Repo) *Monitor {
 	return &Monitor{
-		repos: repos,
-		days:  1,
+		repos:  repos,
+		days:   1,
+		cloner: &RealGitCloner{},
+	}
+}
+
+// NewMonitorWithCloner creates a Monitor with a custom GitCloner for testing
+func NewMonitorWithCloner(repos []config.Repo, cloner GitCloner) *Monitor {
+	return &Monitor{
+		repos:  repos,
+		days:   1,
+		cloner: cloner,
 	}
 }
 
@@ -199,20 +229,17 @@ func getOneLineCommitMessage(message string) string {
 	return strings.TrimSpace(message)
 }
 
-// cloneRemoteRepo performs a shallow clone using git binary for credential helper support
+// cloneRemoteRepo performs a shallow clone using the configured GitCloner
 func (m *Monitor) cloneRemoteRepo(ctx context.Context, repoURL string) (*git.Repository, string, error) {
 	tempDir, err := os.MkdirTemp("", "repomon-*")
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to create temp directory: %w", err)
 	}
 
-	args := []string{"clone", repoURL, tempDir, "--depth", "100", "--no-tags"}
-	cmd := exec.CommandContext(ctx, "git", args...)
-
-	output, err := cmd.CombinedOutput()
+	err = m.cloner.Clone(ctx, repoURL, tempDir)
 	if err != nil {
 		os.RemoveAll(tempDir)
-		slog.Debug("Failed to clone remote repository", "error", err, "url", repoURL, "output", string(output))
+		slog.Debug("Failed to clone remote repository", "error", err, "url", repoURL)
 		return nil, "", fmt.Errorf("git clone failed: %w", err)
 	}
 
