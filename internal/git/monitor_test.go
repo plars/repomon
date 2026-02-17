@@ -208,6 +208,30 @@ func TestNewMonitor(t *testing.T) {
 	}
 }
 
+func TestNewMonitor_GetReposError(t *testing.T) {
+	// Test with config that has no default group - GetRepos will fail
+	cfg := &config.Config{
+		Days:   7,
+		Groups: map[string]*config.Group{}, // Empty groups - no default
+	}
+
+	// NewMonitor should return an empty monitor on error, not nil
+	monitor := NewMonitor(cfg)
+	if monitor == nil {
+		t.Fatal("NewMonitor returned nil on error")
+	}
+
+	// Should have empty repos
+	if len(monitor.repos) != 0 {
+		t.Errorf("Expected empty repos on error, got %d repos", len(monitor.repos))
+	}
+
+	// Should have default days
+	if monitor.days != 1 {
+		t.Errorf("Expected days=1 on error, got %d", monitor.days)
+	}
+}
+
 func TestNewMonitorWithRepos(t *testing.T) {
 	repos := []config.Repo{
 		{Name: "repo1", Path: "/path/to/repo1"},
