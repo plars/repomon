@@ -2,11 +2,12 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
-	"log/slog"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -43,9 +44,12 @@ func parseRepoString(repoStr string) (Repo, error) {
 }
 
 // expandTilde expands ~ to the user's home directory
+// getHomeDir is a variable to allow mocking in tests
+var getHomeDir = os.UserHomeDir
+
 func expandTilde(path string) string {
 	if strings.HasPrefix(path, "~/") || path == "~" {
-		home, err := os.UserHomeDir()
+		home, err := getHomeDir()
 		if err != nil {
 			slog.Warn("Failed to get home directory for ~ expansion", "error", err)
 			return path
@@ -182,68 +186,68 @@ func (c *Config) AddRepo(repoStr, groupName string) error {
 // Save saves the configuration to the specified file path using YAML encoder
 // Writes flat format: days at top-level, groups as groupname sections
 func (c *Config) Save(configFile string) error {
-    if configFile == "" {
-        home, err := os.UserHomeDir()
-        if err != nil {
-            return fmt.Errorf("failed to get home directory: %w", err)
-        }
-        configFile = filepath.Join(home, ".config", "repomon", "config.yaml")
-    }
+	if configFile == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("failed to get home directory: %w", err)
+		}
+		configFile = filepath.Join(home, ".config", "repomon", "config.yaml")
+	}
 
-    // Create directory if it doesn't exist
-    configDir := filepath.Dir(configFile)
-    if err := os.MkdirAll(configDir, 0755); err != nil {
-        return fmt.Errorf("failed to create config directory: %w", err)
-    }
+	// Create directory if it doesn't exist
+	configDir := filepath.Dir(configFile)
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
 
-    f, err := os.Create(configFile)
-    if err != nil {
-        return fmt.Errorf("failed to create config file: %w", err)
-    }
-    defer f.Close()
+	f, err := os.Create(configFile)
+	if err != nil {
+		return fmt.Errorf("failed to create config file: %w", err)
+	}
+	defer f.Close()
 
-    enc := yaml.NewEncoder(f)
-    defer enc.Close()
-    if err := enc.Encode(c); err != nil {
-        return fmt.Errorf("failed to encode config: %w", err)
-    }
+	enc := yaml.NewEncoder(f)
+	defer enc.Close()
+	if err := enc.Encode(c); err != nil {
+		return fmt.Errorf("failed to encode config: %w", err)
+	}
 
-    slog.Debug("Configuration saved successfully", "file", configFile)
-    return nil
+	slog.Debug("Configuration saved successfully", "file", configFile)
+	return nil
 }
 
 // Load the configuration from the specified YAML file path
 func Load(configFile string) (*Config, error) {
-    if configFile == "" {
-        home, err := os.UserHomeDir()
-        if err != nil {
-            return nil, fmt.Errorf("failed to get home directory: %w", err)
-        }
-        configFile = filepath.Join(home, ".config", "repomon", "config.yaml")
-    }
+	if configFile == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get home directory: %w", err)
+		}
+		configFile = filepath.Join(home, ".config", "repomon", "config.yaml")
+	}
 
-    // Check if config file exists
-    if _, err := os.Stat(configFile); os.IsNotExist(err) {
-        return nil, fmt.Errorf("config file not found: %s", configFile)
-    }
+	// Check if config file exists
+	if _, err := os.Stat(configFile); os.IsNotExist(err) {
+		return nil, fmt.Errorf("config file not found: %s", configFile)
+	}
 
-    data, err := os.ReadFile(configFile)
-    if err != nil {
-        return nil, fmt.Errorf("failed to read config file: %w", err)
-    }
+	data, err := os.ReadFile(configFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
 
-    var cfg Config
-    if err := yaml.Unmarshal(data, &cfg); err != nil {
-        return nil, fmt.Errorf("failed to parse YAML: %w", err)
-    }
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse YAML: %w", err)
+	}
 
-    if cfg.Days == 0 {
-        cfg.Days = 1
-    }
-    if cfg.Groups == nil {
-        cfg.Groups = make(map[string]*Group)
-    }
+	if cfg.Days == 0 {
+		cfg.Days = 1
+	}
+	if cfg.Groups == nil {
+		cfg.Groups = make(map[string]*Group)
+	}
 
-    slog.Debug("Configuration loaded successfully", "file", configFile, "groups", len(cfg.Groups))
-    return &cfg, nil
+	slog.Debug("Configuration loaded successfully", "file", configFile, "groups", len(cfg.Groups))
+	return &cfg, nil
 }

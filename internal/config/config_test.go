@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -310,6 +311,43 @@ func TestExpandTilde(t *testing.T) {
 				if result != tt.input {
 					t.Errorf("expandTilde(%q) = %q, want %q", tt.input, result, tt.input)
 				}
+			}
+		})
+	}
+}
+
+func TestExpandTilde_HomeDirError(t *testing.T) {
+	// Save original and restore after test
+	original := getHomeDir
+	defer func() { getHomeDir = original }()
+
+	// Mock getHomeDir to return an error
+	getHomeDir = func() (string, error) {
+		return "", fmt.Errorf("home directory not available")
+	}
+
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "tilde only returns unchanged on error",
+			input: "~",
+			want:  "~",
+		},
+		{
+			name:  "tilde with path returns unchanged on error",
+			input: "~/projects/myrepo",
+			want:  "~/projects/myrepo",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := expandTilde(tt.input)
+			if result != tt.want {
+				t.Errorf("expandTilde(%q) = %q, want %q", tt.input, result, tt.want)
 			}
 		})
 	}
