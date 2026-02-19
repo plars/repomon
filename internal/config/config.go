@@ -183,6 +183,44 @@ func (c *Config) AddRepo(repoStr, groupName string) error {
 	return nil
 }
 
+// RemoveRepo removes a repository from the specified group.
+// The repo can be identified by its full path/URL or by its short name.
+// Returns the removed repository string and an error if not found.
+func (c *Config) RemoveRepo(repoIdentifier, groupName string) (string, error) {
+	if c.Groups == nil {
+		return "", fmt.Errorf("no groups configured")
+	}
+
+	group, ok := c.Groups[groupName]
+	if !ok {
+		return "", fmt.Errorf("group '%s' not found", groupName)
+	}
+
+	// First, try to find by exact match (full path or URL)
+	for i, existingRepo := range group.Repos {
+		if existingRepo == repoIdentifier {
+			removed := group.Repos[i]
+			group.Repos = append(group.Repos[:i], group.Repos[i+1:]...)
+			return removed, nil
+		}
+	}
+
+	// If not found by exact match, try to find by short name
+	for i, existingRepo := range group.Repos {
+		repo, err := parseRepoString(existingRepo)
+		if err != nil {
+			continue
+		}
+		if repo.Name == repoIdentifier {
+			removed := group.Repos[i]
+			group.Repos = append(group.Repos[:i], group.Repos[i+1:]...)
+			return removed, nil
+		}
+	}
+
+	return "", fmt.Errorf("repository '%s' not found in group '%s'", repoIdentifier, groupName)
+}
+
 // Save saves the configuration to the specified file path using YAML encoder
 // Writes flat format: days at top-level, groups as groupname sections
 func (c *Config) Save(configFile string) error {

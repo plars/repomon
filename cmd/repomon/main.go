@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/plars/repomon/internal/config"
 	"github.com/plars/repomon/internal/git"
@@ -24,6 +26,11 @@ type rootOptions struct {
 type runOptions struct {
 	days  int
 	debug bool
+}
+
+// rmOptions holds the flags specific to the 'rm' command.
+type rmOptions struct {
+	force bool
 }
 
 // GitMonitor defines the interface for monitoring git repositories.
@@ -66,6 +73,7 @@ func main() {
 	// Initialize option structs
 	rootOpts := &rootOptions{}
 	runOpts := &runOptions{}
+	rmOpts := &rmOptions{}
 	runner := newDefaultRunner(os.Stdout, os.Stderr)
 
 	var runCmd = &cobra.Command{
@@ -123,6 +131,23 @@ showing the most recent commits to each repository in an easy-to-read format.`,
 	}
 
 	rootCmd.AddCommand(addCmd)
+
+	var rmCmd = &cobra.Command{
+		Use:   "rm <repo>",
+		Short: "Removes a repository from the configuration",
+		Long: `Removes a repository from the configuration. The repository can be
+identified by its short name (as shown in 'list') or by its full path/URL.`,
+		Args: cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := runner.executeRm(args, rootOpts, rmOpts); err != nil {
+				slog.Error("Remove command failed", "error", err)
+				os.Exit(1)
+			}
+		},
+	}
+	rmCmd.Flags().BoolVarP(&rmOpts.force, "force", "f", false, "skip confirmation prompt")
+
+	rootCmd.AddCommand(rmCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		slog.Error("Command execution failed", "error", err)
@@ -266,5 +291,62 @@ func (r *repomonRunner) executeAdd(args []string, rootOpts *rootOptions) error {
 	}
 
 	fmt.Fprintf(r.output, "Added '%s' to group '%s' in %s\n", repoStr, requestedGroupName, configPath)
+	return nil
+}
+
+// executeRm contains the core logic for the 'rm' command.
+func (r *repomonRunner) executeRm(args []string, rootOpts *rootOptions, rmOpts *rmOptions) error {
+	repoIdentifier := args[0]
+	logger := slog.New(slog.NewTextHandler(r.err, nil))
+
+	cfg, err := r.loadConfig(rootOpts.configFile)
+	if err != nil {
+		logger.Error("Failed to load configuration", "error", err)
+		return fmt.Errorf("failed to load configuration: %w", err)
+	}
+
+	requestedGroupName := rootOpts.group
+	if requestedGroupName == "" {
+		requestedGroupName = "default"
+	}
+
+	// If not forced, prompt for confirmation
+	if !rmOpts.force {
+		fmt.Fprintf(r.output, "Remove '%s' from group '%s'? [y/N]: ", repoIdentifier, requestedGroupName)
+		reader := bufio.NewReader(os.Stdin)
+		response, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("failed to read response: %w", err)
+		}
+		response = strings.TrimSpace(strings.ToLower(response))
+		if response != "y" && response != "yes" {
+			fmt.Fprintf(r.output, "Cancelled.\n")
+			return nil
+		}
+	}
+
+	removed, err := cfg.RemoveRepo(repoIdentifier, requestedGroupName)
+	if err != nil {
+		logger.Error("Failed to remove repository", "error", err)
+		return fmt.Errorf("failed to remove repository: %w", err)
+	}
+
+	configPath := rootOpts.configFile
+	if configPath == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("failed to get home directory: %w", err)
+		}
+		configPath = os.ExpandEnv(filepath.Join(home, ".config", "repomon", "config.yaml"))
+	} else {
+		configPath = os.ExpandEnv(configPath)
+	}
+
+	if err := cfg.Save(configPath); err != nil {
+		logger.Error("Failed to save configuration", "error", err)
+		return fmt.Errorf("failed to save configuration: %w", err)
+	}
+
+	fmt.Fprintf(r.output, "Removed '%s' from group '%s' in %s\n", removed, requestedGroupName, configPath)
 	return nil
 }

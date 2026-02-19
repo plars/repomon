@@ -546,6 +546,131 @@ func TestAddRepo(t *testing.T) {
 	}
 }
 
+func TestRemoveRepo(t *testing.T) {
+	tests := []struct {
+		name        string
+		cfg         *Config
+		identifier  string
+		groupName   string
+		wantRemoved string
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "remove by full path",
+			cfg: &Config{
+				Groups: map[string]*Group{
+					"default": {Repos: []string{"/path/to/repo1", "/path/to/repo2"}},
+				},
+			},
+			identifier:  "/path/to/repo1",
+			groupName:   "default",
+			wantRemoved: "/path/to/repo1",
+			wantErr:     false,
+		},
+		{
+			name: "remove by short name",
+			cfg: &Config{
+				Groups: map[string]*Group{
+					"default": {Repos: []string{"/path/to/my-repo", "/path/to/other"}},
+				},
+			},
+			identifier:  "my-repo",
+			groupName:   "default",
+			wantRemoved: "/path/to/my-repo",
+			wantErr:     false,
+		},
+		{
+			name: "remove by URL",
+			cfg: &Config{
+				Groups: map[string]*Group{
+					"default": {Repos: []string{"https://github.com/user/repo.git", "/local/repo"}},
+				},
+			},
+			identifier:  "https://github.com/user/repo.git",
+			groupName:   "default",
+			wantRemoved: "https://github.com/user/repo.git",
+			wantErr:     false,
+		},
+		{
+			name: "remove by short name from URL",
+			cfg: &Config{
+				Groups: map[string]*Group{
+					"default": {Repos: []string{"https://github.com/user/myproject.git", "/local/repo"}},
+				},
+			},
+			identifier:  "myproject",
+			groupName:   "default",
+			wantRemoved: "https://github.com/user/myproject.git",
+			wantErr:     false,
+		},
+		{
+			name: "repo not found",
+			cfg: &Config{
+				Groups: map[string]*Group{
+					"default": {Repos: []string{"/path/to/repo1"}},
+				},
+			},
+			identifier:  "nonexistent",
+			groupName:   "default",
+			wantErr:     true,
+			errContains: "not found",
+		},
+		{
+			name: "group not found",
+			cfg: &Config{
+				Groups: map[string]*Group{
+					"default": {Repos: []string{"/path/to/repo1"}},
+				},
+			},
+			identifier:  "repo1",
+			groupName:   "nonexistent",
+			wantErr:     true,
+			errContains: "not found",
+		},
+		{
+			name: "no groups configured",
+			cfg: &Config{
+				Groups: nil,
+			},
+			identifier:  "repo1",
+			groupName:   "default",
+			wantErr:     true,
+			errContains: "no groups configured",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			removed, err := tt.cfg.RemoveRepo(tt.identifier, tt.groupName)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Error("Expected error, got nil")
+				} else if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
+					t.Errorf("Expected error containing %q, got %q", tt.errContains, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+
+			if removed != tt.wantRemoved {
+				t.Errorf("Expected removed %q, got %q", tt.wantRemoved, removed)
+			}
+
+			// Verify repo was actually removed
+			for _, repo := range tt.cfg.Groups[tt.groupName].Repos {
+				if repo == tt.wantRemoved {
+					t.Error("Repo was not removed from the group")
+				}
+			}
+		})
+	}
+}
+
 func TestConfigSave(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "repomon-save-test")
 	if err != nil {

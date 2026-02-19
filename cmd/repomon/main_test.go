@@ -400,6 +400,139 @@ func TestExecuteAdd(t *testing.T) {
 	}
 }
 
+func TestExecuteRm(t *testing.T) {
+	tests := []struct {
+		name           string
+		cfg            *config.Config
+		loadErr        error
+		args           []string
+		rootOpts       *rootOptions
+		rmOpts         *rmOptions
+		expectedOutput string
+		expectedError  string
+	}{
+		{
+			name: "Remove repository by full path with force",
+			cfg: &config.Config{
+				Days: 1,
+				Groups: map[string]*config.Group{
+					"default": {Repos: []string{"/path/to/repo1", "/path/to/repo2"}},
+				},
+			},
+			args:           []string{"/path/to/repo1"},
+			rootOpts:       &rootOptions{group: "default"},
+			rmOpts:         &rmOptions{force: true},
+			expectedOutput: "Removed '/path/to/repo1' from group 'default'",
+		},
+		{
+			name: "Remove repository by short name with force",
+			cfg: &config.Config{
+				Days: 1,
+				Groups: map[string]*config.Group{
+					"default": {Repos: []string{"/path/to/my-repo", "/path/to/other"}},
+				},
+			},
+			args:           []string{"my-repo"},
+			rootOpts:       &rootOptions{group: "default"},
+			rmOpts:         &rmOptions{force: true},
+			expectedOutput: "Removed '/path/to/my-repo' from group 'default'",
+		},
+		{
+			name: "Remove repository by URL with force",
+			cfg: &config.Config{
+				Days: 1,
+				Groups: map[string]*config.Group{
+					"default": {Repos: []string{"https://github.com/user/repo.git"}},
+				},
+			},
+			args:           []string{"https://github.com/user/repo.git"},
+			rootOpts:       &rootOptions{group: "default"},
+			rmOpts:         &rmOptions{force: true},
+			expectedOutput: "Removed 'https://github.com/user/repo.git' from group 'default'",
+		},
+		{
+			name: "Remove by short name from URL",
+			cfg: &config.Config{
+				Days: 1,
+				Groups: map[string]*config.Group{
+					"default": {Repos: []string{"https://github.com/user/myproject.git"}},
+				},
+			},
+			args:           []string{"myproject"},
+			rootOpts:       &rootOptions{group: "default"},
+			rmOpts:         &rmOptions{force: true},
+			expectedOutput: "Removed 'https://github.com/user/myproject.git' from group 'default'",
+		},
+		{
+			name:    "Config load failure",
+			loadErr: fmt.Errorf("config file not found"),
+			args:    []string{"/path/to/repo"},
+			rootOpts: &rootOptions{
+				configFile: "missing.yaml",
+				group:      "default",
+			},
+			rmOpts:        &rmOptions{force: true},
+			expectedError: "failed to load configuration",
+		},
+		{
+			name: "Remove non-existent repository fails",
+			cfg: &config.Config{
+				Days: 1,
+				Groups: map[string]*config.Group{
+					"default": {Repos: []string{"/path/to/repo1"}},
+				},
+			},
+			args:          []string{"nonexistent"},
+			rootOpts:      &rootOptions{group: "default"},
+			rmOpts:        &rmOptions{force: true},
+			expectedError: "not found",
+		},
+		{
+			name: "Remove from non-existent group fails",
+			cfg: &config.Config{
+				Days: 1,
+				Groups: map[string]*config.Group{
+					"default": {Repos: []string{"/path/to/repo1"}},
+				},
+			},
+			args:          []string{"/path/to/repo1"},
+			rootOpts:      &rootOptions{group: "nonexistent"},
+			rmOpts:        &rmOptions{force: true},
+			expectedError: "not found",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			outBuf := new(bytes.Buffer)
+			errBuf := new(bytes.Buffer)
+			runner := newDefaultRunner(outBuf, errBuf)
+
+			runner.loadConfig = func(path string) (*config.Config, error) {
+				if tt.loadErr != nil {
+					return nil, tt.loadErr
+				}
+				return tt.cfg, nil
+			}
+
+			err := runner.executeRm(tt.args, tt.rootOpts, tt.rmOpts)
+
+			if tt.expectedError != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.expectedError) {
+					t.Errorf("Expected error containing %q, got %v", tt.expectedError, err)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				}
+				if !strings.Contains(outBuf.String(), tt.expectedOutput) {
+					t.Errorf("Expected output containing %q, got %q", tt.expectedOutput, outBuf.String())
+				}
+			}
+		})
+	}
+}
+
 // Keep an integration test to ensure everything works together
 func TestIntegration(t *testing.T) {
 	tmpDir := t.TempDir()
