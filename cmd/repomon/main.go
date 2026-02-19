@@ -69,6 +69,20 @@ func newDefaultRunner(out, err io.Writer) *repomonRunner {
 	}
 }
 
+// resolveConfigPath returns the full path to the config file.
+// If configFile is empty, it returns the default path (~/.config/repomon/config.yaml).
+// Environment variables in the path are expanded.
+func resolveConfigPath(configFile string) (string, error) {
+	if configFile == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("failed to get home directory: %w", err)
+		}
+		return filepath.Join(home, ".config", "repomon", "config.yaml"), nil
+	}
+	return os.ExpandEnv(configFile), nil
+}
+
 func main() {
 	// Initialize option structs
 	rootOpts := &rootOptions{}
@@ -274,15 +288,9 @@ func (r *repomonRunner) executeAdd(args []string, rootOpts *rootOptions) error {
 		return fmt.Errorf("failed to add repository: %w", err)
 	}
 
-	configPath := rootOpts.configFile
-	if configPath == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("failed to get home directory: %w", err)
-		}
-		configPath = os.ExpandEnv(filepath.Join(home, ".config", "repomon", "config.yaml"))
-	} else {
-		configPath = os.ExpandEnv(configPath)
+	configPath, err := resolveConfigPath(rootOpts.configFile)
+	if err != nil {
+		return err
 	}
 
 	if err := cfg.Save(configPath); err != nil {
@@ -331,15 +339,9 @@ func (r *repomonRunner) executeRm(args []string, rootOpts *rootOptions, rmOpts *
 		return fmt.Errorf("failed to remove repository: %w", err)
 	}
 
-	configPath := rootOpts.configFile
-	if configPath == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("failed to get home directory: %w", err)
-		}
-		configPath = os.ExpandEnv(filepath.Join(home, ".config", "repomon", "config.yaml"))
-	} else {
-		configPath = os.ExpandEnv(configPath)
+	configPath, err := resolveConfigPath(rootOpts.configFile)
+	if err != nil {
+		return err
 	}
 
 	if err := cfg.Save(configPath); err != nil {

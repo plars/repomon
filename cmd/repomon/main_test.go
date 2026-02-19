@@ -533,6 +533,59 @@ func TestExecuteRm(t *testing.T) {
 	}
 }
 
+func TestResolveConfigPath(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("Failed to get home directory: %v", err)
+	}
+
+	tests := []struct {
+		name         string
+		configFile   string
+		expectedPath string
+		expectError  bool
+	}{
+		{
+			name:         "Empty config file returns default path",
+			configFile:   "",
+			expectedPath: filepath.Join(home, ".config", "repomon", "config.yaml"),
+		},
+		{
+			name:         "Explicit path is expanded",
+			configFile:   "/custom/path/config.yaml",
+			expectedPath: "/custom/path/config.yaml",
+		},
+		{
+			name:         "Environment variables are expanded",
+			configFile:   "$HOME/.config/custom.yaml",
+			expectedPath: filepath.Join(home, ".config", "custom.yaml"),
+		},
+		{
+			name:         "Tilde is not expanded (os.ExpandEnv doesn't handle ~)",
+			configFile:   "~/.config/repomon/config.yaml",
+			expectedPath: "~/.config/repomon/config.yaml",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := resolveConfigPath(tt.configFile)
+			if tt.expectError {
+				if err == nil {
+					t.Error("Expected error, got nil")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				}
+				if result != tt.expectedPath {
+					t.Errorf("Expected path %q, got %q", tt.expectedPath, result)
+				}
+			}
+		})
+	}
+}
+
 // Keep an integration test to ensure everything works together
 func TestIntegration(t *testing.T) {
 	tmpDir := t.TempDir()
