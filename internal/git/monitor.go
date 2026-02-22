@@ -12,6 +12,7 @@ import (
 	"log/slog"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/plars/repomon/internal/config"
 	"github.com/schollz/progressbar/v3"
@@ -34,14 +35,17 @@ type RepoResult struct {
 
 // GitCloner defines the interface for cloning git repositories
 type GitCloner interface {
-	Clone(ctx context.Context, repoURL, targetDir string) error
+	Clone(ctx context.Context, repoURL, targetDir string, branch string) error
 }
 
 // RealGitCloner implements GitCloner using the git binary
 type RealGitCloner struct{}
 
-func (c *RealGitCloner) Clone(ctx context.Context, repoURL, targetDir string) error {
+func (c *RealGitCloner) Clone(ctx context.Context, repoURL, targetDir string, branch string) error {
 	args := []string{"clone", repoURL, targetDir, "--depth", "100", "--no-tags"}
+	if branch != "" {
+		args = append(args, "--branch", branch)
+	}
 	cmd := exec.CommandContext(ctx, "git", args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -144,7 +148,7 @@ func (m *Monitor) getRepoCommits(ctx context.Context, repo config.Repo) ([]Commi
 	// Determine if this is a remote or local repository
 	if repo.URL != "" {
 		// Remote repository - use git binary for cloning (supports credential helpers)
-		gitRepo, tempDir, err = m.cloneRemoteRepo(ctx, repo.URL)
+		gitRepo, tempDir, err = m.cloneRemoteRepo(ctx, repo.URL, repo.Branch)
 		if err != nil {
 			return nil, fmt.Errorf("failed to clone remote repository: %w", err)
 		}
@@ -168,13 +172,27 @@ func (m *Monitor) getRepoCommits(ctx context.Context, repo config.Repo) ([]Commi
 		return nil, fmt.Errorf("repository configuration must specify either 'path' or 'url'")
 	}
 
-	// Get reference to HEAD
-	ref, err := gitRepo.Head()
-	if err != nil {
-		slog.Debug("Failed to get HEAD reference", "error", err)
-		return nil, fmt.Errorf("failed to get HEAD reference: %w", err)
+	// Get reference to branch or HEAD
+	var ref *plumbing.Reference
+	if repo.Branch != "" {
+		// Try to resolve branch
+		ref, err = gitRepo.Reference(plumbing.NewBranchReferenceName(repo.Branch), true)
+		if err != nil {
+			// Fallback to resolving the name directly if it's not a simple branch name
+			ref, err = gitRepo.Reference(plumbing.ReferenceName(repo.Branch), true)
+			if err != nil {
+				slog.Debug("Failed to resolve branch reference", "branch", repo.Branch, "error", err)
+				return nil, fmt.Errorf("failed to resolve branch '%s': %w", repo.Branch, err)
+			}
+		}
+	} else {
+		ref, err = gitRepo.Head()
+		if err != nil {
+			slog.Debug("Failed to get HEAD reference", "error", err)
+			return nil, fmt.Errorf("failed to get HEAD reference: %w", err)
+		}
 	}
-	slog.Debug("Got HEAD reference", "hash", ref.Hash(), "name", ref.Name())
+	slog.Debug("Got reference for commit retrieval", "hash", ref.Hash(), "name", ref.Name())
 
 	// Get commit history
 	commitIter, err := gitRepo.Log(&git.LogOptions{
@@ -230,16 +248,16 @@ func getOneLineCommitMessage(message string) string {
 }
 
 // cloneRemoteRepo performs a shallow clone using the configured GitCloner
-func (m *Monitor) cloneRemoteRepo(ctx context.Context, repoURL string) (*git.Repository, string, error) {
+func (m *Monitor) cloneRemoteRepo(ctx context.Context, repoURL string, branch string) (*git.Repository, string, error) {
 	tempDir, err := os.MkdirTemp("", "repomon-*")
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to create temp directory: %w", err)
 	}
 
-	err = m.cloner.Clone(ctx, repoURL, tempDir)
+	err = m.cloner.Clone(ctx, repoURL, tempDir, branch)
 	if err != nil {
 		os.RemoveAll(tempDir)
-		slog.Debug("Failed to clone remote repository", "error", err, "url", repoURL)
+		slog.Debug("Failed to clone remote repository", "error", err, "url", repoURL, "branch", branch)
 		return nil, "", fmt.Errorf("git clone failed: %w", err)
 	}
 

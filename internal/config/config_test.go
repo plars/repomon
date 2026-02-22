@@ -141,6 +141,24 @@ func TestParseRepoString(t *testing.T) {
 			repoStr: "~/projects/work-app",
 			wantErr: false,
 		},
+		{
+			name:    "local path with branch",
+			repoStr: "/home/user/projects/my-project#feature/abc",
+			want:    Repo{Name: "my-project", Path: "/home/user/projects/my-project", Branch: "feature/abc"},
+			wantErr: false,
+		},
+		{
+			name:    "HTTPS URL with branch",
+			repoStr: "https://github.com/go-git/go-git#v5",
+			want:    Repo{Name: "go-git", URL: "https://github.com/go-git/go-git", Branch: "v5"},
+			wantErr: false,
+		},
+		{
+			name:    "SSH URL with branch",
+			repoStr: "git@github.com:plars/repomon.git#main",
+			want:    Repo{Name: "repomon", URL: "git@github.com:plars/repomon.git", Branch: "main"},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -602,6 +620,18 @@ func TestRemoveRepo(t *testing.T) {
 			identifier:  "myproject",
 			groupName:   "default",
 			wantRemoved: "https://github.com/user/myproject.git",
+			wantErr:     false,
+		},
+		{
+			name: "remove by short_name#branch",
+			cfg: &Config{
+				Groups: map[string]*Group{
+					"default": {Repos: []string{"/path/to/myrepo#feature", "/path/to/other"}},
+				},
+			},
+			identifier:  "myrepo#feature",
+			groupName:   "default",
+			wantRemoved: "/path/to/myrepo#feature",
 			wantErr:     false,
 		},
 		{

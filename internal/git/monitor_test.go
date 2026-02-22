@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/plars/repomon/internal/config"
 )
@@ -293,6 +294,123 @@ func TestMonitor_getRepoCommits_WithDaysFilter(t *testing.T) {
 	t.Logf("Got %d commits with days filter", len(commits))
 }
 
+func TestMonitor_getRepoCommits_WithBranch(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "repomon-git-test-branch")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	repoPath := filepath.Join(tempDir, "test-repo")
+	if err := os.MkdirAll(repoPath, 0755); err != nil {
+		t.Fatalf("Failed to create repo dir: %v", err)
+	}
+
+	if err := initGitRepoWithBranch(repoPath, "feature"); err != nil {
+		t.Fatalf("Failed to initialize test repo with branch: %v", err)
+	}
+
+	monitor := NewMonitorWithRepos([]config.Repo{})
+	
+	// Test fetching from the feature branch
+	repo := config.Repo{Name: "test-repo", Path: repoPath, Branch: "feature"}
+	commits, err := monitor.getRepoCommits(context.Background(), repo)
+
+	if err != nil {
+		t.Fatalf("Failed to get commits from branch: %v", err)
+	}
+
+	found := false
+	for _, c := range commits {
+		if c.Message == "Feature commit" {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Error("Expected to find 'Feature commit' in branch history")
+	}
+
+	// Test fetching from master (should NOT have the feature commit)
+	repoMaster := config.Repo{Name: "test-repo", Path: repoPath, Branch: "master"}
+	commitsMaster, err := monitor.getRepoCommits(context.Background(), repoMaster)
+	if err != nil {
+		t.Fatalf("Failed to get commits from master: %v", err)
+	}
+
+	for _, c := range commitsMaster {
+		if c.Message == "Feature commit" {
+			t.Error("Did not expect to find 'Feature commit' in master history")
+		}
+	}
+}
+
+// Helper function to initialize a test git repository with a specific branch
+func initGitRepoWithBranch(repoPath string, branchName string) error {
+	// Use go-git to initialize repository
+	repo, err := git.PlainInit(repoPath, false)
+	if err != nil {
+		return err
+	}
+
+	worktree, err := repo.Worktree()
+	if err != nil {
+		return err
+	}
+
+	// Create initial file and commit on master
+	testFile := filepath.Join(repoPath, "master.txt")
+	if err := os.WriteFile(testFile, []byte("master content"), 0644); err != nil {
+		return err
+	}
+	_, err = worktree.Add("master.txt")
+	if err != nil {
+		return err
+	}
+	_, err = worktree.Commit("Initial commit on master", &git.CommitOptions{
+		Author: &object.Signature{Name: "Test User", Email: "test@example.com", When: time.Now()},
+	})
+	if err != nil {
+		return err
+	}
+
+	// Create and checkout new branch
+	headRef, err := repo.Head()
+	if err != nil {
+		return err
+	}
+
+	branchRefName := plumbing.NewBranchReferenceName(branchName)
+	ref := plumbing.NewHashReference(branchRefName, headRef.Hash())
+	err = repo.Storer.SetReference(ref)
+	if err != nil {
+		return err
+	}
+
+	err = worktree.Checkout(&git.CheckoutOptions{
+		Branch: branchRefName,
+	})
+	if err != nil {
+		return err
+	}
+
+	// Create commit on the new branch
+	featFile := filepath.Join(repoPath, "feature.txt")
+	if err := os.WriteFile(featFile, []byte("feature content"), 0644); err != nil {
+		return err
+	}
+	_, err = worktree.Add("feature.txt")
+	if err != nil {
+		return err
+	}
+	_, err = worktree.Commit("Feature commit", &git.CommitOptions{
+		Author: &object.Signature{Name: "Test User", Email: "test@example.com", When: time.Now()},
+	})
+
+	return err
+}
+
 func TestMonitor_getRepoCommits_NoPathOrURL(t *testing.T) {
 	monitor := NewMonitorWithRepos([]config.Repo{})
 	repo := config.Repo{Name: "empty-repo"}
@@ -309,7 +427,7 @@ type mockGitCloner struct {
 	cloneDir string // Directory to use as the "cloned" repo
 }
 
-func (m *mockGitCloner) Clone(ctx context.Context, repoURL, targetDir string) error {
+func (m *mockGitCloner) Clone(ctx context.Context, repoURL, targetDir string, branch string) error {
 	if m.cloneErr != nil {
 		return m.cloneErr
 	}

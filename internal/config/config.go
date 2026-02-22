@@ -23,24 +23,36 @@ type Group struct {
 }
 
 type Repo struct {
-	Name string `yaml:"name"`
-	Path string `yaml:"path,omitempty"`
-	URL  string `yaml:"url,omitempty"`
+	Name   string `yaml:"name"`
+	Path   string `yaml:"path,omitempty"`
+	URL    string `yaml:"url,omitempty"`
+	Branch string `yaml:"branch,omitempty"`
 }
 
-// parseRepoString parses a repository string and extracts name, path, and URL
+// parseRepoString parses a repository string and extracts name, path, URL, and optional branch
 func parseRepoString(repoStr string) (Repo, error) {
 	repoStr = expandTilde(repoStr)
 
-	if isGitURL(repoStr) {
-		return parseGitURL(repoStr), nil
+	base := repoStr
+	branch := ""
+	if idx := strings.LastIndex(repoStr, "#"); idx != -1 {
+		base = repoStr[:idx]
+		branch = repoStr[idx+1:]
 	}
 
-	name := extractNameFromPath(repoStr)
-	return Repo{
-		Name: name,
-		Path: repoStr,
-	}, nil
+	var repo Repo
+	if isGitURL(base) {
+		repo = parseGitURL(base)
+	} else {
+		name := extractNameFromPath(base)
+		repo = Repo{
+			Name: name,
+			Path: base,
+		}
+	}
+
+	repo.Branch = branch
+	return repo, nil
 }
 
 // expandTilde expands ~ to the user's home directory
@@ -205,13 +217,19 @@ func (c *Config) RemoveRepo(repoIdentifier, groupName string) (string, error) {
 		}
 	}
 
-	// If not found by exact match, try to find by short name
+	// If not found by exact match, try to find by short name or display name (name#branch)
 	for i, existingRepo := range group.Repos {
 		repo, err := parseRepoString(existingRepo)
 		if err != nil {
 			continue
 		}
-		if repo.Name == repoIdentifier {
+
+		displayName := repo.Name
+		if repo.Branch != "" {
+			displayName = fmt.Sprintf("%s#%s", repo.Name, repo.Branch)
+		}
+
+		if repo.Name == repoIdentifier || displayName == repoIdentifier {
 			removed := group.Repos[i]
 			group.Repos = append(group.Repos[:i], group.Repos[i+1:]...)
 			return removed, nil

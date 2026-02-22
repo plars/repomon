@@ -28,20 +28,25 @@ func (f *Formatter) Format(results []git.RepoResult) (string, error) {
 
 	// Process each repository in order
 	for _, result := range results {
+		repoHeader := fmt.Sprintf("📁 %s", result.Repo.Name)
+		if result.Repo.Branch != "" {
+			repoHeader = fmt.Sprintf("📁 %s (%s)", result.Repo.Name, result.Repo.Branch)
+		}
+
 		if result.Error != nil {
-			sb.WriteString(fmt.Sprintf("📁 %s\n", result.Repo.Name))
+			sb.WriteString(repoHeader + "\n")
 			sb.WriteString(fmt.Sprintf("   ❌ Error: %s\n\n", result.Error.Error()))
 			continue
 		}
 
 		if len(result.Commits) == 0 {
-			sb.WriteString(fmt.Sprintf("📁 %s\n", result.Repo.Name))
+			sb.WriteString(repoHeader + "\n")
 			sb.WriteString("   ✅ No recent commits\n\n")
 			continue
 		}
 
 		hasAnyCommits = true
-		sb.WriteString(fmt.Sprintf("📁 %s\n", result.Repo.Name))
+		sb.WriteString(repoHeader + "\n")
 		sb.WriteString("   Recent commits:\n")
 
 		for _, commit := range result.Commits {

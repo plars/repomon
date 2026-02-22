@@ -252,12 +252,17 @@ func (r *repomonRunner) executeList(args []string, rootOpts *rootOptions) error 
 
 	fmt.Fprintf(r.output, "Repositories for group '%s':\n", effectiveGroupName)
 	for _, repo := range repos {
+		repoDisplay := repo.Name
+		if repo.Branch != "" {
+			repoDisplay = fmt.Sprintf("%s#%s", repo.Name, repo.Branch)
+		}
+
 		if repo.Path != "" {
-			fmt.Fprintf(r.output, "  - %s: %s\n", repo.Name, repo.Path)
+			fmt.Fprintf(r.output, "  - %s: %s\n", repoDisplay, repo.Path)
 		} else if repo.URL != "" {
-			fmt.Fprintf(r.output, "  - %s: %s (remote)\n", repo.Name, repo.URL)
+			fmt.Fprintf(r.output, "  - %s: %s (remote)\n", repoDisplay, repo.URL)
 		} else {
-			fmt.Fprintf(r.output, "  - %s: (unknown location)\n", repo.Name)
+			fmt.Fprintf(r.output, "  - %s: (unknown location)\n", repoDisplay)
 		}
 	}
 	return nil
