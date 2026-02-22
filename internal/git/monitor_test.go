@@ -311,7 +311,7 @@ func TestMonitor_getRepoCommits_WithBranch(t *testing.T) {
 	}
 
 	monitor := NewMonitorWithRepos([]config.Repo{})
-	
+
 	// Test fetching from the feature branch
 	repo := config.Repo{Name: "test-repo", Path: repoPath, Branch: "feature"}
 	commits, err := monitor.getRepoCommits(context.Background(), repo)
