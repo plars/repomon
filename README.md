@@ -68,21 +68,22 @@ days: 7  # Number of days to look back
 
 default:
   repos:
-    - "/home/user/projects/my-project"           # Local - auto-named "my-project"
-    - "https://github.com/go-git/go-git"        # Remote - auto-named "go-git"
-    - "git@github.com:plars/repomon.git"      # Remote SSH - auto-named "repomon"
-    - "~/projects/work-app"                     # Local with ~ - auto-named "work-app"
-    - "https://gitlab.com/company/project.git"   # Remote GitLab - auto-named "project"
+    - /home/user/projects/my-project         # Local - auto-named "my-project"
+    - https://github.com/go-git/go-git       # Remote - auto-named "go-git"
+    - https://github.com/someorg/foo#v2.x    # Specify v2.x branch
+    - git@github.com:plars/repomon.git       # Remote SSH - auto-named "repomon"
+    - ~/projects/work-app                    # Local with ~ - auto-named "work-app"
+    - https://gitlab.com/company/project.git # Remote GitLab - auto-named "project"
 
 work:
   repos:
-    - "https://github.com/company/backend"
-    - "https://github.com/company/frontend"
+    - https://github.com/company/backend
+    - https://github.com/company/frontend
 
 personal:
   repos:
-    - "~/projects/dotfiles"
-    - "https://github.com/user/hobby-project"
+    - ~/projects/dotfiles
+    - https://github.com/user/hobby-project
 ```
 
 ### Auto-Naming Rules
