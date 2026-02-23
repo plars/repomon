@@ -20,6 +20,7 @@ import (
 type rootOptions struct {
 	configFile string
 	group      string
+	version    bool
 }
 
 // runOptions holds the flags specific to the 'run' command.
@@ -118,6 +119,25 @@ showing the most recent commits to each repository in an easy-to-read format.`,
 	// Add run-specific flags to rootCmd so they work without 'run' subcommand
 	rootCmd.Flags().AddFlagSet(runCmd.Flags())
 
+	var versionCmd = &cobra.Command{
+		Use:   "version",
+		Short: "Print the version number of repomon",
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Fprintf(runner.output, "repomon version %s\n", config.Version)
+		},
+	}
+	// Add a persistent --version flag that just calls the version command
+	rootCmd.PersistentFlags().BoolVarP(&rootOpts.version, "version", "v", false, "print the version number")
+
+	// If --version is set, call the version command and exit
+	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		if rootOpts.version {
+			versionCmd.Run(cmd, args)
+			os.Exit(0)
+		}
+		return nil
+	}
+
 	var listCmd = &cobra.Command{
 		Use:   "list",
 		Short: "Lists configured git repositories",
@@ -131,6 +151,7 @@ showing the most recent commits to each repository in an easy-to-read format.`,
 
 	rootCmd.AddCommand(runCmd)
 	rootCmd.AddCommand(listCmd)
+	rootCmd.AddCommand(versionCmd)
 
 	var addCmd = &cobra.Command{
 		Use:   "add <repo>",

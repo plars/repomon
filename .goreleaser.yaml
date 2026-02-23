@@ -1,0 +1,20 @@
+# .goreleaser.yaml
+version: 2
+project_name: repomon
+
+builds:
+  - main: ./cmd/repomon
+    binary: repomon
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+      - -X=github.com/plars/repomon/internal/config.Version={{.Version}}
+

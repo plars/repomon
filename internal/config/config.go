@@ -11,6 +11,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Version is injected at build time by goreleaser.
+// If not injected, it defaults to "dev".
+var Version = "dev"
+
 // Config represents the application configuration
 // Uses flat YAML structure: days at top-level, groups as sections
 type Config struct {
