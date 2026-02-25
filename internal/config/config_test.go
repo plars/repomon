@@ -513,6 +513,16 @@ func TestParseGitURL(t *testing.T) {
 			urlStr: "ssh://git@gitlab.com/user/project",
 			want:   Repo{Name: "project", URL: "ssh://git@gitlab.com/user/project"},
 		},
+		{
+			name:   "git@ URL without colon",
+			urlStr: "git@github.com",
+			want:   Repo{Name: "unknown", URL: "git@github.com"},
+		},
+		{
+			name:   "malformed URL falls back to path extraction",
+			urlStr: "not-a-valid-url",
+			want:   Repo{Name: "not-a-valid-url", URL: "not-a-valid-url"},
+		},
 	}
 
 	for _, tt := range tests {
