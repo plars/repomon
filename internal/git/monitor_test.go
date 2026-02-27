@@ -54,6 +54,33 @@ func TestMonitor_GetRecentCommits(t *testing.T) {
 	}
 }
 
+func TestMonitor_GetRecentCommits_WithError(t *testing.T) {
+	// Test with a repo that will fail - non-existent path
+	repos := []config.Repo{
+		{Name: "valid-repo", Path: "/nonexistent/path"},
+		{Name: "another-invalid", Path: "/another/nonexistent"},
+	}
+	monitor := NewMonitorWithRepos(repos)
+	results, err := monitor.GetRecentCommits(context.Background())
+
+	// GetRecentCommits itself should not return an error - it collects errors in results
+	if err != nil {
+		t.Fatalf("GetRecentCommits returned unexpected error: %v", err)
+	}
+
+	// Should have 2 results
+	if len(results) != 2 {
+		t.Errorf("Expected 2 results, got %d", len(results))
+	}
+
+	// Both repos should have errors
+	for i, result := range results {
+		if result.Error == nil {
+			t.Errorf("Expected error for result %d (%s), got nil", i, result.Repo.Name)
+		}
+	}
+}
+
 func TestMonitor_getRepoCommits(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "repomon-git-test")
 	if err != nil {
