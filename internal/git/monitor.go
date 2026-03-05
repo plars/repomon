@@ -107,7 +107,7 @@ func (m *Monitor) GetRecentCommits(ctx context.Context) ([]RepoResult, error) {
 		wg.Add(1)
 		go func(index int, repo config.Repo) {
 			defer wg.Done()
-			defer bar.Add(1)
+			defer func() { _ = bar.Add(1) }()
 
 			sem <- struct{}{}        // Acquire
 			defer func() { <-sem }() // Release
@@ -135,7 +135,7 @@ func (m *Monitor) GetRecentCommits(ctx context.Context) ([]RepoResult, error) {
 	}
 
 	wg.Wait()
-	bar.Finish()
+	_ = bar.Finish()
 	return results, nil
 }
 

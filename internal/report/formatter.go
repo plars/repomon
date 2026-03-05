@@ -35,7 +35,7 @@ func (f *Formatter) Format(results []git.RepoResult) (string, error) {
 
 		if result.Error != nil {
 			sb.WriteString(repoHeader + "\n")
-			sb.WriteString(fmt.Sprintf("   ❌ Error: %s\n\n", result.Error.Error()))
+			fmt.Fprintf(&sb, "   ❌ Error: %s\n\n", result.Error.Error())
 			continue
 		}
 
@@ -51,7 +51,7 @@ func (f *Formatter) Format(results []git.RepoResult) (string, error) {
 
 		for _, commit := range result.Commits {
 			timeStr := f.formatRelativeTime(commit.Timestamp)
-			sb.WriteString(fmt.Sprintf("   • %s - %s (%s)\n", commit.Message, commit.Author, timeStr))
+			fmt.Fprintf(&sb, "   • %s - %s (%s)\n", commit.Message, commit.Author, timeStr)
 		}
 		sb.WriteString("\n")
 	}
