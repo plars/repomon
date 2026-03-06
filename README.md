@@ -1,5 +1,7 @@
 # 🛻 Repomon
 
+[![codecov](https://codecov.io/gh/plars/repomon/branch/main/graph/badge.svg)](https://codecov.io/gh/plars/repomon)
+
 A fast tool to monitor multiple git repositories and report recent commits. Supports both local repositories and remote repositories via HTTPS or SSH, using shallow cloning and concurrency.
 
 
