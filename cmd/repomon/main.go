@@ -49,6 +49,7 @@ type ReportFormatter interface {
 type repomonRunner struct {
 	output io.Writer
 	err    io.Writer
+	stdin  io.Reader
 
 	// Dependency injection for testing
 	loadConfig    func(string) (*config.Config, error)
@@ -56,10 +57,11 @@ type repomonRunner struct {
 	newFormatter  func() ReportFormatter
 }
 
-func newDefaultRunner(out, err io.Writer) *repomonRunner {
+func newDefaultRunner(out, err io.Writer, stdin io.Reader) *repomonRunner {
 	return &repomonRunner{
 		output:     out,
 		err:        err,
+		stdin:      stdin,
 		loadConfig: config.Load,
 		newGitMonitor: func(repos []config.Repo) GitMonitor {
 			return git.NewMonitorWithRepos(repos)
@@ -89,7 +91,7 @@ func main() {
 	rootOpts := &rootOptions{}
 	runOpts := &runOptions{}
 	rmOpts := &rmOptions{}
-	runner := newDefaultRunner(os.Stdout, os.Stderr)
+	runner := newDefaultRunner(os.Stdout, os.Stderr, os.Stdin)
 
 	var runCmd = &cobra.Command{
 		Use:   "run",
@@ -347,7 +349,7 @@ func (r *repomonRunner) executeRm(args []string, rootOpts *rootOptions, rmOpts *
 	// If not forced, prompt for confirmation
 	if !rmOpts.force {
 		fmt.Fprintf(r.output, "Remove '%s' from group '%s'? [y/N]: ", repoIdentifier, requestedGroupName)
-		reader := bufio.NewReader(os.Stdin)
+		reader := bufio.NewReader(r.stdin)
 		response, err := reader.ReadString('\n')
 		if err != nil {
 			return fmt.Errorf("failed to read response: %w", err)

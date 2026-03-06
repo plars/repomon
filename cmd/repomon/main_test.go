@@ -103,7 +103,7 @@ func TestExecuteList(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			outBuf := new(bytes.Buffer)
 			errBuf := new(bytes.Buffer)
-			runner := newDefaultRunner(outBuf, errBuf)
+			runner := newDefaultRunner(outBuf, errBuf, nil)
 
 			runner.loadConfig = func(path string) (*config.Config, error) {
 				if tt.loadErr != nil {
@@ -257,7 +257,7 @@ func TestExecuteRun(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			outBuf := new(bytes.Buffer)
 			errBuf := new(bytes.Buffer)
-			runner := newDefaultRunner(outBuf, errBuf)
+			runner := newDefaultRunner(outBuf, errBuf, nil)
 
 			runner.loadConfig = func(path string) (*config.Config, error) {
 				if tt.loadErr != nil {
@@ -373,7 +373,7 @@ func TestExecuteAdd(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			outBuf := new(bytes.Buffer)
 			errBuf := new(bytes.Buffer)
-			runner := newDefaultRunner(outBuf, errBuf)
+			runner := newDefaultRunner(outBuf, errBuf, nil)
 
 			runner.loadConfig = func(path string) (*config.Config, error) {
 				if tt.loadErr != nil {
@@ -506,7 +506,7 @@ func TestExecuteRm(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			outBuf := new(bytes.Buffer)
 			errBuf := new(bytes.Buffer)
-			runner := newDefaultRunner(outBuf, errBuf)
+			runner := newDefaultRunner(outBuf, errBuf, nil)
 
 			runner.loadConfig = func(path string) (*config.Config, error) {
 				if tt.loadErr != nil {
@@ -530,6 +530,207 @@ func TestExecuteRm(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestExecuteRmWithConfirmation(t *testing.T) {
+	tests := []struct {
+		name           string
+		cfg            *config.Config
+		input          string
+		rmOpts         *rmOptions
+		expectedOutput string
+		expectedError  string
+		shouldRemove   bool
+	}{
+		{
+			name: "Confirm removal with 'y'",
+			cfg: &config.Config{
+				Days: 1,
+				Groups: map[string]*config.Group{
+					"default": {Repos: []string{"/path/to/repo1", "/path/to/repo2"}},
+				},
+			},
+			input:          "y\n",
+			rmOpts:         &rmOptions{force: false},
+			expectedOutput: "Removed '/path/to/repo1' from group 'default'",
+			shouldRemove:   true,
+		},
+		{
+			name: "Confirm removal with 'yes'",
+			cfg: &config.Config{
+				Days: 1,
+				Groups: map[string]*config.Group{
+					"default": {Repos: []string{"/path/to/repo1", "/path/to/repo2"}},
+				},
+			},
+			input:          "yes\n",
+			rmOpts:         &rmOptions{force: false},
+			expectedOutput: "Removed '/path/to/repo1' from group 'default'",
+			shouldRemove:   true,
+		},
+		{
+			name: "Cancel removal with 'n'",
+			cfg: &config.Config{
+				Days: 1,
+				Groups: map[string]*config.Group{
+					"default": {Repos: []string{"/path/to/repo1"}},
+				},
+			},
+			input:          "n\n",
+			rmOpts:         &rmOptions{force: false},
+			expectedOutput: "Cancelled.",
+			shouldRemove:   false,
+		},
+		{
+			name: "Cancel removal with empty input",
+			cfg: &config.Config{
+				Days: 1,
+				Groups: map[string]*config.Group{
+					"default": {Repos: []string{"/path/to/repo1"}},
+				},
+			},
+			input:          "\n",
+			rmOpts:         &rmOptions{force: false},
+			expectedOutput: "Cancelled.",
+			shouldRemove:   false,
+		},
+		{
+			name: "Cancel removal with random input",
+			cfg: &config.Config{
+				Days: 1,
+				Groups: map[string]*config.Group{
+					"default": {Repos: []string{"/path/to/repo1"}},
+				},
+			},
+			input:          "nope\n",
+			rmOpts:         &rmOptions{force: false},
+			expectedOutput: "Cancelled.",
+			shouldRemove:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			outBuf := new(bytes.Buffer)
+			errBuf := new(bytes.Buffer)
+			stdin := strings.NewReader(tt.input)
+			runner := newDefaultRunner(outBuf, errBuf, stdin)
+
+			runner.loadConfig = func(path string) (*config.Config, error) {
+				return tt.cfg, nil
+			}
+
+			err := runner.executeRm([]string{"/path/to/repo1"}, &rootOptions{group: "default"}, tt.rmOpts)
+
+			if tt.expectedError != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.expectedError) {
+					t.Errorf("Expected error containing %q, got %v", tt.expectedError, err)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				}
+				if !strings.Contains(outBuf.String(), tt.expectedOutput) {
+					t.Errorf("Expected output containing %q, got %q", tt.expectedOutput, outBuf.String())
+				}
+			}
+
+			// Verify the repo was removed or not as expected
+			if tt.shouldRemove {
+				if len(tt.cfg.Groups["default"].Repos) != 1 || tt.cfg.Groups["default"].Repos[0] != "/path/to/repo2" {
+					t.Errorf("Expected repo to be removed, but it wasn't")
+				}
+			}
+		})
+	}
+}
+
+func TestExecuteRunFormatterError(t *testing.T) {
+	outBuf := new(bytes.Buffer)
+	errBuf := new(bytes.Buffer)
+	runner := newDefaultRunner(outBuf, errBuf, nil)
+
+	runner.loadConfig = func(path string) (*config.Config, error) {
+		return &config.Config{
+			Days: 1,
+			Groups: map[string]*config.Group{
+				"default": {Repos: []string{"/path/to/repo"}},
+			},
+		}, nil
+	}
+	runner.newGitMonitor = func(repos []config.Repo) GitMonitor {
+		return &mockGitMonitor{results: []git.RepoResult{
+			{Repo: config.Repo{Name: "repo", Path: "/path/to/repo"}},
+		}, err: nil}
+	}
+	runner.newFormatter = func() ReportFormatter {
+		return &mockFormatter{output: "", err: fmt.Errorf("formatting failed")}
+	}
+
+	err := runner.executeRun(context.Background(), nil, &runOptions{days: 1}, &rootOptions{group: "default"})
+
+	if err == nil || !strings.Contains(err.Error(), "failed to format report") {
+		t.Errorf("Expected formatter error, got %v", err)
+	}
+}
+
+func TestExecuteAddSaveError(t *testing.T) {
+	outBuf := new(bytes.Buffer)
+	errBuf := new(bytes.Buffer)
+	runner := newDefaultRunner(outBuf, errBuf, nil)
+
+	cfg := &config.Config{
+		Days: 1,
+		Groups: map[string]*config.Group{
+			"default": {Repos: []string{}},
+		},
+	}
+
+	runner.loadConfig = func(path string) (*config.Config, error) {
+		return cfg, nil
+	}
+
+	// Use a read-only directory to force a save error
+	readOnlyDir := t.TempDir()
+	os.Chmod(readOnlyDir, 0555)
+	defer os.Chmod(readOnlyDir, 0755)
+
+	rootOpts := &rootOptions{configFile: filepath.Join(readOnlyDir, "config.yaml"), group: "default"}
+	err := runner.executeAdd([]string{"/path/to/repo"}, rootOpts)
+
+	if err == nil || !strings.Contains(err.Error(), "failed to save configuration") {
+		t.Errorf("Expected save error, got %v", err)
+	}
+}
+
+func TestExecuteRmSaveError(t *testing.T) {
+	outBuf := new(bytes.Buffer)
+	errBuf := new(bytes.Buffer)
+	runner := newDefaultRunner(outBuf, errBuf, nil)
+
+	cfg := &config.Config{
+		Days: 1,
+		Groups: map[string]*config.Group{
+			"default": {Repos: []string{"/path/to/repo1"}},
+		},
+	}
+
+	runner.loadConfig = func(path string) (*config.Config, error) {
+		return cfg, nil
+	}
+
+	// Use a read-only directory to force a save error
+	readOnlyDir := t.TempDir()
+	os.Chmod(readOnlyDir, 0555)
+	defer os.Chmod(readOnlyDir, 0755)
+
+	rootOpts := &rootOptions{configFile: filepath.Join(readOnlyDir, "config.yaml"), group: "default"}
+	rmOpts := &rmOptions{force: true}
+	err := runner.executeRm([]string{"/path/to/repo1"}, rootOpts, rmOpts)
+
+	if err == nil || !strings.Contains(err.Error(), "failed to save configuration") {
+		t.Errorf("Expected save error, got %v", err)
 	}
 }
 
@@ -623,7 +824,7 @@ default:
 
 	outBuf := new(bytes.Buffer)
 	errBuf := new(bytes.Buffer)
-	runner := newDefaultRunner(outBuf, errBuf)
+	runner := newDefaultRunner(outBuf, errBuf, nil)
 
 	rootOpts := &rootOptions{configFile: cfgPath}
 	runOpts := &runOptions{days: 1}
