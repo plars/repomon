@@ -628,6 +628,44 @@ func TestRealGitCloner_Clone(t *testing.T) {
 	})
 }
 
+func TestRealGitCloner_Clone_WithBranch(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "repomon-clone-branch-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create a source repo with multiple branches
+	sourceRepoPath := filepath.Join(tempDir, "source-repo")
+	if err := os.MkdirAll(sourceRepoPath, 0755); err != nil {
+		t.Fatalf("Failed to create source repo dir: %v", err)
+	}
+	if err := initGitRepoWithBranch(sourceRepoPath, "feature"); err != nil {
+		t.Fatalf("Failed to initialize repo with branch: %v", err)
+	}
+
+	t.Run("clone specific branch", func(t *testing.T) {
+		targetDir := filepath.Join(tempDir, "cloned-repo")
+		cloner := &RealGitCloner{}
+
+		err := cloner.Clone(context.Background(), sourceRepoPath, targetDir, "feature")
+		if err != nil {
+			t.Fatalf("Clone with branch failed: %v", err)
+		}
+
+		// Verify the clone succeeded
+		if _, err := os.Stat(filepath.Join(targetDir, ".git")); os.IsNotExist(err) {
+			t.Error("Expected .git directory in cloned repo")
+		}
+
+		// Verify feature.txt exists (created on feature branch)
+		featureFile := filepath.Join(targetDir, "feature.txt")
+		if _, err := os.Stat(featureFile); os.IsNotExist(err) {
+			t.Error("Expected feature.txt to exist when cloning feature branch")
+		}
+	})
+}
+
 // Helper function to initialize a test git repository using go-git
 func initTestRepo(repoPath string) error {
 	return initGitRepo(repoPath)
