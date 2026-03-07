@@ -556,6 +556,78 @@ func TestRealGitCloner_Interface(t *testing.T) {
 	var _ GitCloner = &RealGitCloner{}
 }
 
+func TestRealGitCloner_Clone(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "repomon-clone-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create a source repo that we'll clone from
+	sourceRepoPath := filepath.Join(tempDir, "source-repo")
+	if err := os.MkdirAll(sourceRepoPath, 0755); err != nil {
+		t.Fatalf("Failed to create source repo dir: %v", err)
+	}
+	if err := initTestRepo(sourceRepoPath); err != nil {
+		t.Fatalf("Failed to initialize source repo: %v", err)
+	}
+
+	t.Run("clone from local path", func(t *testing.T) {
+		targetDir := filepath.Join(tempDir, "cloned-repo")
+		cloner := &RealGitCloner{}
+
+		err := cloner.Clone(context.Background(), sourceRepoPath, targetDir, "")
+		if err != nil {
+			t.Fatalf("Clone failed: %v", err)
+		}
+
+		// Verify the clone succeeded
+		if _, err := os.Stat(filepath.Join(targetDir, ".git")); os.IsNotExist(err) {
+			t.Error("Expected .git directory in cloned repo")
+		}
+
+		// Verify the content was cloned
+		testFile := filepath.Join(targetDir, "test.txt")
+		content, err := os.ReadFile(testFile)
+		if err != nil {
+			t.Fatalf("Failed to read cloned file: %v", err)
+		}
+		if string(content) != "test content" {
+			t.Errorf("Expected 'test content', got %q", content)
+		}
+	})
+
+	t.Run("clone from non-existent source fails", func(t *testing.T) {
+		targetDir := filepath.Join(tempDir, "failed-clone")
+		cloner := &RealGitCloner{}
+
+		err := cloner.Clone(context.Background(), "/nonexistent/repo", targetDir, "")
+		if err == nil {
+			t.Error("Expected error when cloning from non-existent source")
+		}
+		if !strings.Contains(err.Error(), "git clone failed") {
+			t.Errorf("Expected 'git clone failed' in error, got: %v", err)
+		}
+	})
+
+	t.Run("clone to read-only destination fails", func(t *testing.T) {
+		// Create a read-only directory
+		readOnlyDir := filepath.Join(tempDir, "readonly")
+		if err := os.MkdirAll(readOnlyDir, 0555); err != nil {
+			t.Fatalf("Failed to create read-only dir: %v", err)
+		}
+		defer os.Chmod(readOnlyDir, 0755) // Restore permissions for cleanup
+
+		targetDir := filepath.Join(readOnlyDir, "cloned-repo")
+		cloner := &RealGitCloner{}
+
+		err := cloner.Clone(context.Background(), sourceRepoPath, targetDir, "")
+		if err == nil {
+			t.Error("Expected error when cloning to read-only destination")
+		}
+	})
+}
+
 // Helper function to initialize a test git repository using go-git
 func initTestRepo(repoPath string) error {
 	return initGitRepo(repoPath)
