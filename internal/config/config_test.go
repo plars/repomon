@@ -768,3 +768,32 @@ func TestConfigSaveDefaultPath(t *testing.T) {
 		t.Logf("Save to default path failed (expected in test environment): %v", err)
 	}
 }
+
+func TestConfigSave_MkdirAllError(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "repomon-mkdir-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create a file where a directory should be
+	blockingFile := filepath.Join(tempDir, "blocking")
+	if err := os.WriteFile(blockingFile, []byte("blocked"), 0644); err != nil {
+		t.Fatalf("Failed to create blocking file: %v", err)
+	}
+
+	cfg := &Config{
+		Days:   1,
+		Groups: make(map[string]*Group),
+	}
+
+	// Try to save to a path where the parent "directory" is actually a file
+	configPath := filepath.Join(blockingFile, "config.yaml")
+	err = cfg.Save(configPath)
+	if err == nil {
+		t.Error("Expected error when MkdirAll should fail")
+	}
+	if !strings.Contains(err.Error(), "failed to create config directory") {
+		t.Errorf("Expected 'failed to create config directory' in error, got: %v", err)
+	}
+}
