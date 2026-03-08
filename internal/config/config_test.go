@@ -797,3 +797,36 @@ func TestConfigSave_MkdirAllError(t *testing.T) {
 		t.Errorf("Expected 'failed to create config directory' in error, got: %v", err)
 	}
 }
+
+func TestConfigSave_CreateFileError(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("Skipping test when running as root (permission-based test)")
+	}
+
+	tempDir, err := os.MkdirTemp("", "repomon-create-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create a read-only directory
+	readOnlyDir := filepath.Join(tempDir, "readonly")
+	if err := os.MkdirAll(readOnlyDir, 0555); err != nil {
+		t.Fatalf("Failed to create read-only dir: %v", err)
+	}
+	defer os.Chmod(readOnlyDir, 0755) // Restore for cleanup
+
+	cfg := &Config{
+		Days:   1,
+		Groups: make(map[string]*Group),
+	}
+
+	configPath := filepath.Join(readOnlyDir, "config.yaml")
+	err = cfg.Save(configPath)
+	if err == nil {
+		t.Error("Expected error when creating file in read-only directory")
+	}
+	if !strings.Contains(err.Error(), "failed to create config file") {
+		t.Errorf("Expected 'failed to create config file' in error, got: %v", err)
+	}
+}
