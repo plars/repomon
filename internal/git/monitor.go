@@ -270,4 +270,3 @@ func (m *Monitor) cloneRemoteRepo(ctx context.Context, repoURL string, branch st
 	slog.Debug("Successfully cloned remote repository", "url", repoURL, "tempDir", tempDir)
 	return gitRepo, tempDir, nil
 }
-
