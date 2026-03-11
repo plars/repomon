@@ -271,7 +271,3 @@ func (m *Monitor) cloneRemoteRepo(ctx context.Context, repoURL string, branch st
 	return gitRepo, tempDir, nil
 }
 
-// parseGitLog is no longer needed with go-git, but kept for backwards compatibility
-func (m *Monitor) parseGitLog(output []byte) ([]Commit, error) {
-	return []Commit{}, fmt.Errorf("parseGitLog deprecated with go-git implementation")
-}

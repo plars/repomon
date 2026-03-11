@@ -140,21 +140,6 @@ func TestMonitor_getRepoCommits_NotGitRepo(t *testing.T) {
 	}
 }
 
-func TestMonitor_parseGitLog(t *testing.T) {
-	monitor := NewMonitorWithRepos([]config.Repo{})
-
-	// Test that parseGitLog is deprecated
-	_, err := monitor.parseGitLog([]byte(""))
-	if err == nil {
-		t.Error("Expected error for deprecated parseGitLog function")
-	}
-
-	expectedError := "parseGitLog deprecated with go-git implementation"
-	if err.Error() != expectedError {
-		t.Errorf("Expected error '%s', got '%s'", expectedError, err.Error())
-	}
-}
-
 func TestGetOneLineCommitMessage(t *testing.T) {
 	tests := []struct {
 		name  string
