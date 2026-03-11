@@ -18,6 +18,8 @@ import (
 	"github.com/schollz/progressbar/v3"
 )
 
+const maxConcurrentRepos = 10
+
 // Commit represents a git commit
 type Commit struct {
 	Hash      string
@@ -95,7 +97,7 @@ func (m *Monitor) GetRecentCommits(ctx context.Context) ([]RepoResult, error) {
 	var wg sync.WaitGroup
 
 	// Use a semaphore to limit concurrent goroutines
-	sem := make(chan struct{}, 10) // Limit to 10 concurrent operations
+	sem := make(chan struct{}, maxConcurrentRepos)
 
 	bar := progressbar.NewOptions(len(m.repos),
 		progressbar.OptionSetDescription("Fetching commits"),
