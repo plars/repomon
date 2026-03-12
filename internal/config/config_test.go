@@ -152,6 +152,16 @@ func TestParseRepoString(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name:    "trailing hash no branch",
+			repoStr: "/home/user/projects/my-project#",
+			wantErr: true,
+		},
+		{
+			name:    "hash with no base",
+			repoStr: "#main",
+			wantErr: true,
+		},
+		{
 			name:    "local path with branch",
 			repoStr: "/home/user/projects/my-project#feature/abc",
 			want:    Repo{Name: "my-project", Path: "/home/user/projects/my-project", Branch: "feature/abc"},

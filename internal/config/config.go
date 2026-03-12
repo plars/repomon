@@ -47,6 +47,12 @@ func parseRepoString(repoStr string) (Repo, error) {
 	if idx := strings.LastIndex(repoStr, "#"); idx != -1 {
 		base = repoStr[:idx]
 		branch = repoStr[idx+1:]
+		if base == "" {
+			return Repo{}, fmt.Errorf("repository string %q has no path or URL before '#'", repoStr)
+		}
+		if branch == "" {
+			return Repo{}, fmt.Errorf("repository string %q has '#' but no branch name", repoStr)
+		}
 	}
 
 	var repo Repo
