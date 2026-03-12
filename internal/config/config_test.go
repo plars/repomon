@@ -142,6 +142,16 @@ func TestParseRepoString(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name:    "empty string",
+			repoStr: "",
+			wantErr: true,
+		},
+		{
+			name:    "whitespace only",
+			repoStr: "   ",
+			wantErr: true,
+		},
+		{
 			name:    "local path with branch",
 			repoStr: "/home/user/projects/my-project#feature/abc",
 			want:    Repo{Name: "my-project", Path: "/home/user/projects/my-project", Branch: "feature/abc"},

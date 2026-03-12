@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -35,6 +36,10 @@ type Repo struct {
 
 // parseRepoString parses a repository string and extracts name, path, URL, and optional branch
 func parseRepoString(repoStr string) (Repo, error) {
+	if strings.TrimSpace(repoStr) == "" {
+		return Repo{}, errors.New("repository string cannot be empty")
+	}
+
 	repoStr = expandTilde(repoStr)
 
 	base := repoStr
