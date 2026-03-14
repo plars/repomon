@@ -93,9 +93,11 @@ func main() {
 	rmOpts := &rmOptions{}
 	runner := newDefaultRunner(os.Stdout, os.Stderr, os.Stdin)
 
-	var runCmd = &cobra.Command{
-		Use:   "run",
-		Short: "Monitors configured git repositories and reports recent changes",
+	var rootCmd = &cobra.Command{
+		Use:   "repomon",
+		Short: "A tool to monitor git repositories and report recent changes",
+		Long: `Repomon monitors configured git repositories and generates a report
+showing the most recent commits to each repository in an easy-to-read format.`,
 		Run: func(cmd *cobra.Command, args []string) {
 			if err := runner.executeRun(cmd.Context(), args, runOpts, rootOpts); err != nil {
 				slog.Error("Run command failed", "error", err)
@@ -103,23 +105,13 @@ func main() {
 			}
 		},
 	}
-	// Bind run-specific flags to runOptions
-	runCmd.Flags().IntVarP(&runOpts.days, "days", "d", 1, "number of days to look back in history")
-	runCmd.Flags().BoolVar(&runOpts.debug, "debug", false, "enable debug logging")
-
-	var rootCmd = &cobra.Command{
-		Use:   "repomon",
-		Short: "A tool to monitor git repositories and report recent changes",
-		Long: `Repomon monitors configured git repositories and generates a report
-showing the most recent commits to each repository in an easy-to-read format.`,
-		Run: runCmd.Run, // Set runCmd.Run as the default action for rootCmd
-	}
 
 	// Bind persistent flags to rootOptions
 	rootCmd.PersistentFlags().StringVarP(&rootOpts.configFile, "config", "c", "", "path to config file (default ~/.config/repomon/config.yaml)")
 	rootCmd.PersistentFlags().StringVarP(&rootOpts.group, "group", "g", "", "repository group to use (default: 'default')")
-	// Add run-specific flags to rootCmd so they work without 'run' subcommand
-	rootCmd.Flags().AddFlagSet(runCmd.Flags())
+	// Bind run-specific flags to runOptions
+	rootCmd.Flags().IntVarP(&runOpts.days, "days", "d", 1, "number of days to look back in history")
+	rootCmd.Flags().BoolVar(&runOpts.debug, "debug", false, "enable debug logging")
 
 	var versionCmd = &cobra.Command{
 		Use:   "version",
@@ -151,7 +143,6 @@ showing the most recent commits to each repository in an easy-to-read format.`,
 		},
 	}
 
-	rootCmd.AddCommand(runCmd)
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(versionCmd)
 
