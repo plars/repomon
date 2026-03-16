@@ -113,13 +113,8 @@ showing the most recent commits to each repository in an easy-to-read format.`,
 	rootCmd.Flags().IntVarP(&runOpts.days, "days", "d", 1, "number of days to look back in history")
 	rootCmd.Flags().BoolVar(&runOpts.debug, "debug", false, "enable debug logging")
 
-	var versionCmd = &cobra.Command{
-		Use:   "version",
-		Short: "Print the version number of repomon",
-		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Fprintf(runner.output, "repomon version %s\n", config.Version)
-		},
-	}
+	versionCmd := runner.versionCmd()
+
 	// Add a persistent --version flag that just calls the version command
 	rootCmd.PersistentFlags().BoolVarP(&rootOpts.version, "version", "v", false, "print the version number")
 
