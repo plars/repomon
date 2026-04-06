@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/plars/repomon/internal/config"
 	"github.com/schollz/progressbar/v3"
 )
@@ -211,9 +212,8 @@ func (m *Monitor) getRepoCommits(ctx context.Context, repo config.Repo) ([]Commi
 
 	var commits []Commit
 	err = commitIter.ForEach(func(c *object.Commit) error {
-		// Check if we've reached the cutoff date
 		if c.Author.When.Before(cutoff) {
-			return fmt.Errorf("stop iteration")
+			return storer.ErrStop
 		}
 
 		message := getOneLineCommitMessage(c.Message)
@@ -227,8 +227,7 @@ func (m *Monitor) getRepoCommits(ctx context.Context, repo config.Repo) ([]Commi
 		return nil
 	})
 
-	// Handle iteration completion vs error
-	if err != nil && err.Error() != "stop iteration" {
+	if err != nil {
 		return nil, fmt.Errorf("failed to iterate commits: %w", err)
 	}
 
