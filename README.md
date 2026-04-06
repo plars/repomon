@@ -8,13 +8,17 @@ A fast tool to monitor multiple git repositories and report recent commits. Supp
 ## Installation
 
 ```bash
+# Download prebuilt binary (adjust OS/arch as needed)
+curl -L https://github.com/plars/repomon/releases/latest/download/repomon_linux_amd64.tar.gz | tar -xz
+sudo mv repomon /usr/local/bin/
+
+# Install with Go
+go install github.com/plars/repomon/cmd/repomon@latest
+
 # Build from source
 git clone https://github.com/plars/repomon.git
 cd repomon
 go build -o repomon ./cmd/repomon
-
-# Or install directly
-go install github.com/plars/repomon/cmd/repomon@latest
 ```
 
 ## ⚡ Quick Start
