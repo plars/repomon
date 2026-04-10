@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"os/exec"
@@ -61,23 +62,16 @@ func (c *RealGitCloner) Clone(ctx context.Context, repoURL, targetDir string, br
 // CachingGitCloner implements GitCloner with local caching
 type CachingGitCloner struct {
 	cacheDir string
-	branch   string
 }
 
 // NewCachingGitCloner creates a CachingGitCloner
-func NewCachingGitCloner(cacheDir, branch string) *CachingGitCloner {
+func NewCachingGitCloner(cacheDir string) *CachingGitCloner {
 	return &CachingGitCloner{
 		cacheDir: cacheDir,
-		branch:   branch,
 	}
 }
 
 func (c *CachingGitCloner) Clone(ctx context.Context, repoURL, targetDir string, branch string) error {
-	// Use provided branch or default to the one from config
-	if branch == "" {
-		branch = c.branch
-	}
-
 	// Sanitize repo URL for use as directory name
 	cacheName := sanitizeRepoName(repoURL, branch)
 	cachePath := filepath.Join(c.cacheDir, cacheName)
@@ -114,6 +108,18 @@ func (c *CachingGitCloner) fetchUpdates(ctx context.Context, repoPath, branch st
 	if err != nil {
 		return fmt.Errorf("git fetch failed: %w: %s", err, output)
 	}
+
+	// Reset working tree to match the fetched remote state
+	resetRef := "origin/HEAD"
+	if branch != "" {
+		resetRef = "origin/" + branch
+	}
+	cmd = exec.CommandContext(ctx, "git", "reset", "--hard", resetRef)
+	cmd.Dir = repoPath
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git reset failed: %w: %s", err, output)
+	}
 	return nil
 }
 
@@ -139,19 +145,14 @@ func (c *CachingGitCloner) copyFromCache(cachePath, targetDir string) error {
 }
 
 func sanitizeRepoName(repoURL, branch string) string {
-	// Remove .git suffix
-	name := strings.TrimSuffix(repoURL, ".git")
-	// Replace problematic characters
-	name = strings.ReplaceAll(name, "://", "_")
-	name = strings.ReplaceAll(name, ":", "_")
-	name = strings.ReplaceAll(name, "/", "_")
-	name = strings.ReplaceAll(name, "@", "_")
-	name = strings.ReplaceAll(name, ".", "_")
-	// Add branch suffix if specified
+	key := repoURL
 	if branch != "" {
-		name = name + "_" + branch
+		key = key + "#" + branch
 	}
-	return name
+	h := sha256.Sum256([]byte(key))
+	// Use repo basename for readability + hash prefix for uniqueness
+	base := strings.TrimSuffix(filepath.Base(repoURL), ".git")
+	return fmt.Sprintf("%s-%x", base, h[:8])
 }
 
 func copyDirContents(src, dst string) error {
@@ -175,13 +176,18 @@ func copyDirContents(src, dst string) error {
 }
 
 func copyFile(src, dst string) error {
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+
 	srcFile, err := os.Open(src)
 	if err != nil {
 		return err
 	}
 	defer srcFile.Close()
 
-	dstFile, err := os.Create(dst)
+	dstFile, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, srcInfo.Mode())
 	if err != nil {
 		return err
 	}
@@ -229,7 +235,7 @@ func NewMonitorWithCache(repos []config.Repo, cacheEnabled bool, cacheDir string
 			}
 		}
 		if cacheDir != "" {
-			cloner = NewCachingGitCloner(cacheDir, "")
+			cloner = NewCachingGitCloner(cacheDir)
 		}
 	}
 
