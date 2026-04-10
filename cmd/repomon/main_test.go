@@ -290,6 +290,87 @@ func TestExecuteRun(t *testing.T) {
 	}
 }
 
+func TestExecuteRun_DaysResolution(t *testing.T) {
+	tests := []struct {
+		name     string
+		cfgDays  int
+		runOpts  *runOptions
+		wantDays int
+	}{
+		{
+			name:     "explicit --days overrides config",
+			cfgDays:  14,
+			runOpts:  &runOptions{days: 7, daysExplicitlySet: true},
+			wantDays: 7,
+		},
+		{
+			name:     "explicit --days 1 overrides config",
+			cfgDays:  7,
+			runOpts:  &runOptions{days: 1, daysExplicitlySet: true},
+			wantDays: 1,
+		},
+		{
+			name:     "flag not set preserves config value",
+			cfgDays:  14,
+			runOpts:  &runOptions{days: 1, daysExplicitlySet: false},
+			wantDays: 14,
+		},
+		{
+			name:     "flag not set and config zero defaults to 1",
+			cfgDays:  0,
+			runOpts:  &runOptions{days: 1, daysExplicitlySet: false},
+			wantDays: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			outBuf := new(bytes.Buffer)
+			errBuf := new(bytes.Buffer)
+			runner := newDefaultRunner(outBuf, errBuf, nil)
+
+			runner.loadConfig = func(path string) (*config.Config, error) {
+				return &config.Config{
+					Days: tt.cfgDays,
+					Groups: map[string]*config.Group{
+						"default": {Repos: []string{"/path/to/repo"}},
+					},
+				}, nil
+			}
+
+			var capturedDays int
+			runner.newGitMonitor = func(repos []config.Repo, cacheEnabled bool, cacheDir string) GitMonitor {
+				m := &mockGitMonitor{results: []git.RepoResult{}}
+				return &capturingMonitor{mock: m, onSetDays: func(d int) { capturedDays = d }}
+			}
+			runner.newFormatter = func() ReportFormatter {
+				return &mockFormatter{output: ""}
+			}
+
+			_ = runner.executeRun(context.Background(), nil, tt.runOpts, &rootOptions{group: "default"})
+
+			if capturedDays != tt.wantDays {
+				t.Errorf("expected days=%d, got days=%d", tt.wantDays, capturedDays)
+			}
+		})
+	}
+}
+
+// capturingMonitor wraps mockGitMonitor to capture SetDays calls.
+type capturingMonitor struct {
+	mock      *mockGitMonitor
+	onSetDays func(int)
+}
+
+func (c *capturingMonitor) GetRecentCommits(ctx context.Context) ([]git.RepoResult, error) {
+	return c.mock.GetRecentCommits(ctx)
+}
+
+func (c *capturingMonitor) SetDays(days int) {
+	c.onSetDays(days)
+	c.mock.SetDays(days)
+}
+
 func TestExecuteAdd(t *testing.T) {
 	tests := []struct {
 		name           string

@@ -85,6 +85,7 @@ func main() {
 		Long: `Repomon monitors configured git repositories and generates a report
 showing the most recent commits to each repository in an easy-to-read format.`,
 		Run: func(cmd *cobra.Command, args []string) {
+			runOpts.daysExplicitlySet = cmd.Flags().Changed("days")
 			if err := runner.executeRun(cmd.Context(), args, runOpts, rootOpts); err != nil {
 				slog.Error("Run command failed", "error", err)
 				os.Exit(1)

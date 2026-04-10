@@ -8,9 +8,10 @@ import (
 
 // runOptions holds the flags specific to the run command.
 type runOptions struct {
-	days    int
-	debug   bool
-	noCache bool
+	days              int
+	daysExplicitlySet bool
+	debug             bool
+	noCache           bool
 }
 
 // executeRun contains the core logic for the default run command.
@@ -24,14 +25,10 @@ func (r *repomonRunner) executeRun(ctx context.Context, args []string, runOpts *
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	// Only override cfg.Days if runOpts.days was explicitly changed from its default (1)
-	// and is different from the config's default.
-	if runOpts.days != 1 || cfg.Days == 0 {
-		if runOpts.days != 1 {
-			cfg.Days = runOpts.days
-		} else if cfg.Days == 0 {
-			cfg.Days = 1
-		}
+	if runOpts.daysExplicitlySet {
+		cfg.Days = runOpts.days
+	} else if cfg.Days == 0 {
+		cfg.Days = 1
 	}
 
 	if runOpts.debug {
