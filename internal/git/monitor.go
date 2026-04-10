@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -57,6 +58,139 @@ func (c *RealGitCloner) Clone(ctx context.Context, repoURL, targetDir string, br
 	return nil
 }
 
+// CachingGitCloner implements GitCloner with local caching
+type CachingGitCloner struct {
+	cacheDir string
+	branch   string
+}
+
+// NewCachingGitCloner creates a CachingGitCloner
+func NewCachingGitCloner(cacheDir, branch string) *CachingGitCloner {
+	return &CachingGitCloner{
+		cacheDir: cacheDir,
+		branch:   branch,
+	}
+}
+
+func (c *CachingGitCloner) Clone(ctx context.Context, repoURL, targetDir string, branch string) error {
+	// Use provided branch or default to the one from config
+	if branch == "" {
+		branch = c.branch
+	}
+
+	// Sanitize repo URL for use as directory name
+	cacheName := sanitizeRepoName(repoURL, branch)
+	cachePath := filepath.Join(c.cacheDir, cacheName)
+
+	// Check if cached repo exists
+	if _, err := os.Stat(cachePath); err == nil {
+		// Cache exists, try to fetch updates
+		slog.Debug("Using cached repository", "path", cachePath)
+		if err := c.fetchUpdates(ctx, cachePath, branch); err != nil {
+			// Fetch failed, remove cache and re-clone
+			slog.Warn("Fetch failed, re-cloning", "error", err)
+			if err := os.RemoveAll(cachePath); err != nil {
+				slog.Warn("Failed to remove broken cache", "error", err)
+			}
+		} else {
+			// Fetch succeeded, copy to target
+			return c.copyFromCache(cachePath, targetDir)
+		}
+	}
+
+	// No cache or cache was removed, do fresh clone to cache
+	if err := c.cloneToCache(ctx, repoURL, cachePath, branch); err != nil {
+		return err
+	}
+
+	// Copy from cache to target
+	return c.copyFromCache(cachePath, targetDir)
+}
+
+func (c *CachingGitCloner) fetchUpdates(ctx context.Context, repoPath, branch string) error {
+	cmd := exec.CommandContext(ctx, "git", "fetch", "origin")
+	cmd.Dir = repoPath
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git fetch failed: %w: %s", err, output)
+	}
+	return nil
+}
+
+func (c *CachingGitCloner) cloneToCache(ctx context.Context, repoURL, cachePath, branch string) error {
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0755); err != nil {
+		return fmt.Errorf("failed to create cache directory: %w", err)
+	}
+
+	args := []string{"clone", repoURL, cachePath, "--depth", "100", "--no-tags"}
+	if branch != "" {
+		args = append(args, "--branch", branch)
+	}
+	cmd := exec.CommandContext(ctx, "git", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git clone failed: %w: %s", err, output)
+	}
+	return nil
+}
+
+func (c *CachingGitCloner) copyFromCache(cachePath, targetDir string) error {
+	return copyDirContents(cachePath, targetDir)
+}
+
+func sanitizeRepoName(repoURL, branch string) string {
+	// Remove .git suffix
+	name := strings.TrimSuffix(repoURL, ".git")
+	// Replace problematic characters
+	name = strings.ReplaceAll(name, "://", "_")
+	name = strings.ReplaceAll(name, ":", "_")
+	name = strings.ReplaceAll(name, "/", "_")
+	name = strings.ReplaceAll(name, "@", "_")
+	name = strings.ReplaceAll(name, ".", "_")
+	// Add branch suffix if specified
+	if branch != "" {
+		name = name + "_" + branch
+	}
+	return name
+}
+
+func copyDirContents(src, dst string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		relPath, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		if relPath == "." {
+			return nil
+		}
+		dstPath := filepath.Join(dst, relPath)
+		if info.IsDir() {
+			return os.MkdirAll(dstPath, info.Mode())
+		}
+		return copyFile(path, dstPath)
+	})
+}
+
+func copyFile(src, dst string) error {
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	dstFile, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer dstFile.Close()
+
+	_, err = dstFile.ReadFrom(srcFile)
+	return err
+}
+
 type Monitor struct {
 	repos  []config.Repo
 	days   int
@@ -77,6 +211,32 @@ func NewMonitorWithRepos(repos []config.Repo) *Monitor {
 		repos:  repos,
 		days:   1,
 		cloner: &RealGitCloner{},
+	}
+}
+
+// NewMonitorWithCache creates a Monitor with optional caching based on config
+func NewMonitorWithCache(repos []config.Repo, cacheEnabled bool, cacheDir string) *Monitor {
+	var cloner GitCloner = &RealGitCloner{}
+
+	if cacheEnabled {
+		if cacheDir == "" {
+			// Default cache directory
+			home, err := os.UserHomeDir()
+			if err != nil {
+				slog.Warn("Failed to get home directory for cache", "error", err)
+			} else {
+				cacheDir = filepath.Join(home, ".cache", "repomon")
+			}
+		}
+		if cacheDir != "" {
+			cloner = NewCachingGitCloner(cacheDir, "")
+		}
+	}
+
+	return &Monitor{
+		repos:  repos,
+		days:   1,
+		cloner: cloner,
 	}
 }
 

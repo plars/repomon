@@ -265,7 +265,7 @@ func TestExecuteRun(t *testing.T) {
 				}
 				return tt.cfg, nil
 			}
-			runner.newGitMonitor = func(repos []config.Repo) GitMonitor {
+			runner.newGitMonitor = func(repos []config.Repo, cacheEnabled bool, cacheDir string) GitMonitor {
 				return &mockGitMonitor{results: tt.monitorResults, err: tt.monitorErr}
 			}
 			runner.newFormatter = func() ReportFormatter {
@@ -659,7 +659,7 @@ func TestExecuteRunFormatterError(t *testing.T) {
 			},
 		}, nil
 	}
-	runner.newGitMonitor = func(repos []config.Repo) GitMonitor {
+	runner.newGitMonitor = func(repos []config.Repo, cacheEnabled bool, cacheDir string) GitMonitor {
 		return &mockGitMonitor{results: []git.RepoResult{
 			{Repo: config.Repo{Name: "repo", Path: "/path/to/repo"}},
 		}, err: nil}

@@ -8,8 +8,9 @@ import (
 
 // runOptions holds the flags specific to the run command.
 type runOptions struct {
-	days  int
-	debug bool
+	days    int
+	debug   bool
+	noCache bool
 }
 
 // executeRun contains the core logic for the default run command.
@@ -48,7 +49,17 @@ func (r *repomonRunner) executeRun(ctx context.Context, args []string, runOpts *
 		return fmt.Errorf("failed to get repositories: %w", err)
 	}
 
-	monitor := r.newGitMonitor(repos)
+	cacheEnabled := cfg.Cache != nil && cfg.Cache.Enabled
+	cacheDir := ""
+	if cfg.Cache != nil && cfg.Cache.Dir != "" {
+		cacheDir = cfg.Cache.Dir
+	}
+	// CLI flag overrides config
+	if runOpts.noCache {
+		cacheEnabled = false
+	}
+
+	monitor := r.newGitMonitor(repos, cacheEnabled, cacheDir)
 	monitor.SetDays(cfg.Days)
 	results, err := monitor.GetRecentCommits(ctx)
 	if err != nil {

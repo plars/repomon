@@ -445,31 +445,9 @@ func (m *mockGitCloner) Clone(ctx context.Context, repoURL, targetDir string, br
 	}
 	// If a cloneDir is provided, copy its contents to targetDir
 	if m.cloneDir != "" {
-		return copyDir(m.cloneDir, targetDir)
+		return copyDirContents(m.cloneDir, targetDir)
 	}
 	return nil
-}
-
-// copyDir recursively copies a directory
-func copyDir(src, dst string) error {
-	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		relPath, err := filepath.Rel(src, path)
-		if err != nil {
-			return err
-		}
-		dstPath := filepath.Join(dst, relPath)
-		if info.IsDir() {
-			return os.MkdirAll(dstPath, info.Mode())
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(dstPath, data, info.Mode())
-	})
 }
 
 func TestMonitor_getRepoCommits_RemoteRepo(t *testing.T) {

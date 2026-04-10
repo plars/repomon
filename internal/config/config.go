@@ -20,7 +20,13 @@ var Version = "dev"
 // Uses flat YAML structure: days at top-level, groups as sections
 type Config struct {
 	Days   int               `yaml:"days"`
+	Cache  *CacheConfig      `yaml:"cache,omitempty"`
 	Groups map[string]*Group `yaml:",inline"`
+}
+
+type CacheConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Dir     string `yaml:"dir,omitempty"`
 }
 
 type Group struct {
@@ -314,6 +320,9 @@ func Load(configFile string) (*Config, error) {
 
 	if cfg.Days == 0 {
 		cfg.Days = 1
+	}
+	if cfg.Cache == nil {
+		cfg.Cache = &CacheConfig{Enabled: false}
 	}
 	if cfg.Groups == nil {
 		cfg.Groups = make(map[string]*Group)

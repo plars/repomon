@@ -40,7 +40,7 @@ type repomonRunner struct {
 
 	// Dependency injection for testing
 	loadConfig    func(string) (*config.Config, error)
-	newGitMonitor func([]config.Repo) GitMonitor
+	newGitMonitor func([]config.Repo, bool, string) GitMonitor
 	newFormatter  func() ReportFormatter
 }
 
@@ -50,8 +50,8 @@ func newDefaultRunner(out, err io.Writer, stdin io.Reader) *repomonRunner {
 		err:        err,
 		stdin:      stdin,
 		loadConfig: config.Load,
-		newGitMonitor: func(repos []config.Repo) GitMonitor {
-			return git.NewMonitorWithRepos(repos)
+		newGitMonitor: func(repos []config.Repo, cacheEnabled bool, cacheDir string) GitMonitor {
+			return git.NewMonitorWithCache(repos, cacheEnabled, cacheDir)
 		},
 		newFormatter: func() ReportFormatter {
 			return report.NewFormatter()
@@ -98,6 +98,7 @@ showing the most recent commits to each repository in an easy-to-read format.`,
 	// Bind run-specific flags to runOptions
 	rootCmd.Flags().IntVarP(&runOpts.days, "days", "d", 1, "number of days to look back in history")
 	rootCmd.Flags().BoolVar(&runOpts.debug, "debug", false, "enable debug logging")
+	rootCmd.Flags().BoolVar(&runOpts.noCache, "no-cache", false, "disable caching for remote repositories")
 
 	versionCmd := runner.versionCmd()
 
