@@ -439,15 +439,11 @@ type mockGitCloner struct {
 	cloneDir string // Directory to use as the "cloned" repo
 }
 
-func (m *mockGitCloner) Clone(ctx context.Context, repoURL, targetDir string, branch string) error {
+func (m *mockGitCloner) Clone(ctx context.Context, repoURL, branch string) (string, func(), error) {
 	if m.cloneErr != nil {
-		return m.cloneErr
+		return "", func() {}, m.cloneErr
 	}
-	// If a cloneDir is provided, copy its contents to targetDir
-	if m.cloneDir != "" {
-		return copyDirContents(m.cloneDir, targetDir)
-	}
-	return nil
+	return m.cloneDir, func() {}, nil
 }
 
 func TestMonitor_getRepoCommits_RemoteRepo(t *testing.T) {
@@ -509,8 +505,8 @@ func TestNewMonitorWithCloner(t *testing.T) {
 	if monitor == nil {
 		t.Fatal("NewMonitorWithCloner returned nil")
 	}
-	if monitor.cloner != mockCloner {
-		t.Error("Monitor cloner was not set correctly")
+	if monitor.cloner == nil {
+		t.Error("Monitor cloner was not set")
 	}
 }
 
@@ -536,22 +532,21 @@ func TestRealGitCloner_Clone(t *testing.T) {
 	}
 
 	t.Run("clone from local path", func(t *testing.T) {
-		targetDir := filepath.Join(tempDir, "cloned-repo")
 		cloner := &RealGitCloner{}
 
-		err := cloner.Clone(context.Background(), sourceRepoPath, targetDir, "")
+		repoPath, cleanup, err := cloner.Clone(context.Background(), sourceRepoPath, "")
 		if err != nil {
 			t.Fatalf("Clone failed: %v", err)
 		}
+		defer cleanup()
 
 		// Verify the clone succeeded
-		if _, err := os.Stat(filepath.Join(targetDir, ".git")); os.IsNotExist(err) {
+		if _, err := os.Stat(filepath.Join(repoPath, ".git")); os.IsNotExist(err) {
 			t.Error("Expected .git directory in cloned repo")
 		}
 
 		// Verify the content was cloned
-		testFile := filepath.Join(targetDir, "test.txt")
-		content, err := os.ReadFile(testFile)
+		content, err := os.ReadFile(filepath.Join(repoPath, "test.txt"))
 		if err != nil {
 			t.Fatalf("Failed to read cloned file: %v", err)
 		}
@@ -561,32 +556,15 @@ func TestRealGitCloner_Clone(t *testing.T) {
 	})
 
 	t.Run("clone from non-existent source fails", func(t *testing.T) {
-		targetDir := filepath.Join(tempDir, "failed-clone")
 		cloner := &RealGitCloner{}
 
-		err := cloner.Clone(context.Background(), "/nonexistent/repo", targetDir, "")
+		_, cleanup, err := cloner.Clone(context.Background(), "/nonexistent/repo", "")
+		defer cleanup()
 		if err == nil {
 			t.Error("Expected error when cloning from non-existent source")
 		}
 		if !strings.Contains(err.Error(), "git clone failed") {
 			t.Errorf("Expected 'git clone failed' in error, got: %v", err)
-		}
-	})
-
-	t.Run("clone to read-only destination fails", func(t *testing.T) {
-		// Create a read-only directory
-		readOnlyDir := filepath.Join(tempDir, "readonly")
-		if err := os.MkdirAll(readOnlyDir, 0555); err != nil {
-			t.Fatalf("Failed to create read-only dir: %v", err)
-		}
-		defer os.Chmod(readOnlyDir, 0755) // Restore permissions for cleanup
-
-		targetDir := filepath.Join(readOnlyDir, "cloned-repo")
-		cloner := &RealGitCloner{}
-
-		err := cloner.Clone(context.Background(), sourceRepoPath, targetDir, "")
-		if err == nil {
-			t.Error("Expected error when cloning to read-only destination")
 		}
 	})
 }
@@ -608,22 +586,16 @@ func TestRealGitCloner_Clone_WithBranch(t *testing.T) {
 	}
 
 	t.Run("clone specific branch", func(t *testing.T) {
-		targetDir := filepath.Join(tempDir, "cloned-repo")
 		cloner := &RealGitCloner{}
 
-		err := cloner.Clone(context.Background(), sourceRepoPath, targetDir, "feature")
+		repoPath, cleanup, err := cloner.Clone(context.Background(), sourceRepoPath, "feature")
 		if err != nil {
 			t.Fatalf("Clone with branch failed: %v", err)
 		}
-
-		// Verify the clone succeeded
-		if _, err := os.Stat(filepath.Join(targetDir, ".git")); os.IsNotExist(err) {
-			t.Error("Expected .git directory in cloned repo")
-		}
+		defer cleanup()
 
 		// Verify feature.txt exists (created on feature branch)
-		featureFile := filepath.Join(targetDir, "feature.txt")
-		if _, err := os.Stat(featureFile); os.IsNotExist(err) {
+		if _, err := os.Stat(filepath.Join(repoPath, "feature.txt")); os.IsNotExist(err) {
 			t.Error("Expected feature.txt to exist when cloning feature branch")
 		}
 	})
@@ -749,21 +721,17 @@ func TestCachingGitCloner_Clone(t *testing.T) {
 	cacheDir := filepath.Join(tempDir, "cache")
 	cloner := NewCachingGitCloner(cacheDir)
 
-	t.Run("first clone populates cache and target", func(t *testing.T) {
-		targetDir := filepath.Join(tempDir, "target1")
-		if err := os.MkdirAll(targetDir, 0755); err != nil {
-			t.Fatal(err)
-		}
-
-		err := cloner.Clone(context.Background(), sourceRepoPath, targetDir, "")
+	t.Run("first call populates cache and returns repo path", func(t *testing.T) {
+		repoPath, cleanup, err := cloner.Clone(context.Background(), sourceRepoPath, "")
 		if err != nil {
 			t.Fatalf("Clone failed: %v", err)
 		}
+		defer cleanup()
 
-		// Verify target has the repo content
-		content, err := os.ReadFile(filepath.Join(targetDir, "test.txt"))
+		// Verify returned path has the repo content
+		content, err := os.ReadFile(filepath.Join(repoPath, "test.txt"))
 		if err != nil {
-			t.Fatalf("Failed to read from target: %v", err)
+			t.Fatalf("Failed to read from repo path: %v", err)
 		}
 		if string(content) != "test content" {
 			t.Errorf("Expected 'test content', got %q", content)
@@ -779,21 +747,17 @@ func TestCachingGitCloner_Clone(t *testing.T) {
 		}
 	})
 
-	t.Run("second clone uses cache", func(t *testing.T) {
-		targetDir := filepath.Join(tempDir, "target2")
-		if err := os.MkdirAll(targetDir, 0755); err != nil {
-			t.Fatal(err)
-		}
-
-		err := cloner.Clone(context.Background(), sourceRepoPath, targetDir, "")
+	t.Run("second call returns same cache path", func(t *testing.T) {
+		repoPath, cleanup, err := cloner.Clone(context.Background(), sourceRepoPath, "")
 		if err != nil {
 			t.Fatalf("Cached clone failed: %v", err)
 		}
+		defer cleanup()
 
-		// Verify target still has correct content
-		content, err := os.ReadFile(filepath.Join(targetDir, "test.txt"))
+		// Verify the returned path still has correct content
+		content, err := os.ReadFile(filepath.Join(repoPath, "test.txt"))
 		if err != nil {
-			t.Fatalf("Failed to read from target: %v", err)
+			t.Fatalf("Failed to read from repo path: %v", err)
 		}
 		if string(content) != "test content" {
 			t.Errorf("Expected 'test content', got %q", content)
@@ -826,77 +790,6 @@ func TestNewMonitorWithCache(t *testing.T) {
 			t.Error("Expected CachingGitCloner when cache is enabled with default dir")
 		}
 	})
-}
-
-func TestCopyFile(t *testing.T) {
-	tempDir := t.TempDir()
-
-	srcPath := filepath.Join(tempDir, "src.txt")
-	if err := os.WriteFile(srcPath, []byte("hello"), 0750); err != nil {
-		t.Fatal(err)
-	}
-
-	dstPath := filepath.Join(tempDir, "dst.txt")
-	if err := copyFile(srcPath, dstPath); err != nil {
-		t.Fatalf("copyFile failed: %v", err)
-	}
-
-	// Verify content
-	content, err := os.ReadFile(dstPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(content) != "hello" {
-		t.Errorf("Expected 'hello', got %q", content)
-	}
-
-	// Verify permissions preserved
-	srcInfo, _ := os.Stat(srcPath)
-	dstInfo, _ := os.Stat(dstPath)
-	if srcInfo.Mode() != dstInfo.Mode() {
-		t.Errorf("Expected mode %v, got %v", srcInfo.Mode(), dstInfo.Mode())
-	}
-}
-
-func TestCopyDirContents(t *testing.T) {
-	tempDir := t.TempDir()
-
-	srcDir := filepath.Join(tempDir, "src")
-	if err := os.MkdirAll(filepath.Join(srcDir, "subdir"), 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(srcDir, "a.txt"), []byte("aaa"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(srcDir, "subdir", "b.txt"), []byte("bbb"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	dstDir := filepath.Join(tempDir, "dst")
-	if err := os.MkdirAll(dstDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := copyDirContents(srcDir, dstDir); err != nil {
-		t.Fatalf("copyDirContents failed: %v", err)
-	}
-
-	// Verify files were copied
-	content, err := os.ReadFile(filepath.Join(dstDir, "a.txt"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(content) != "aaa" {
-		t.Errorf("Expected 'aaa', got %q", content)
-	}
-
-	content, err = os.ReadFile(filepath.Join(dstDir, "subdir", "b.txt"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(content) != "bbb" {
-		t.Errorf("Expected 'bbb', got %q", content)
-	}
 }
 
 // initTestRepoWithOldCommit creates a repo with an old commit

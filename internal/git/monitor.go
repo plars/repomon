@@ -38,25 +38,33 @@ type RepoResult struct {
 	Error   error
 }
 
-// GitCloner defines the interface for cloning git repositories
+// GitCloner defines the interface for cloning git repositories.
+// Clone returns the path to the cloned repo and a cleanup function to call when done.
 type GitCloner interface {
-	Clone(ctx context.Context, repoURL, targetDir string, branch string) error
+	Clone(ctx context.Context, repoURL, branch string) (repoPath string, cleanup func(), err error)
 }
 
 // RealGitCloner implements GitCloner using the git binary
 type RealGitCloner struct{}
 
-func (c *RealGitCloner) Clone(ctx context.Context, repoURL, targetDir string, branch string) error {
-	args := []string{"clone", repoURL, targetDir, "--depth", "100", "--no-tags"}
+func (c *RealGitCloner) Clone(ctx context.Context, repoURL, branch string) (string, func(), error) {
+	tempDir, err := os.MkdirTemp("", "repomon-*")
+	if err != nil {
+		return "", func() {}, fmt.Errorf("failed to create temp directory: %w", err)
+	}
+	cleanup := func() { os.RemoveAll(tempDir) }
+
+	args := []string{"clone", repoURL, tempDir, "--depth", "100", "--no-tags"}
 	if branch != "" {
 		args = append(args, "--branch", branch)
 	}
 	cmd := exec.CommandContext(ctx, "git", args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("git clone failed: %w: %s", err, output)
+		cleanup()
+		return "", func() {}, fmt.Errorf("git clone failed: %w: %s", err, output)
 	}
-	return nil
+	return tempDir, cleanup, nil
 }
 
 // CachingGitCloner implements GitCloner with local caching
@@ -71,34 +79,27 @@ func NewCachingGitCloner(cacheDir string) *CachingGitCloner {
 	}
 }
 
-func (c *CachingGitCloner) Clone(ctx context.Context, repoURL, targetDir string, branch string) error {
-	// Sanitize repo URL for use as directory name
+func (c *CachingGitCloner) Clone(ctx context.Context, repoURL, branch string) (string, func(), error) {
 	cacheName := sanitizeRepoName(repoURL, branch)
 	cachePath := filepath.Join(c.cacheDir, cacheName)
 
-	// Check if cached repo exists
 	if _, err := os.Stat(cachePath); err == nil {
-		// Cache exists, try to fetch updates
 		slog.Debug("Using cached repository", "path", cachePath)
 		if err := c.fetchUpdates(ctx, cachePath, branch); err != nil {
-			// Fetch failed, remove cache and re-clone
 			slog.Warn("Fetch failed, re-cloning", "error", err)
 			if err := os.RemoveAll(cachePath); err != nil {
 				slog.Warn("Failed to remove broken cache", "error", err)
 			}
 		} else {
-			// Fetch succeeded, copy to target
-			return c.copyFromCache(cachePath, targetDir)
+			return cachePath, func() {}, nil
 		}
 	}
 
-	// No cache or cache was removed, do fresh clone to cache
 	if err := c.cloneToCache(ctx, repoURL, cachePath, branch); err != nil {
-		return err
+		return "", func() {}, err
 	}
 
-	// Copy from cache to target
-	return c.copyFromCache(cachePath, targetDir)
+	return cachePath, func() {}, nil
 }
 
 func (c *CachingGitCloner) fetchUpdates(ctx context.Context, repoPath, branch string) error {
@@ -140,10 +141,6 @@ func (c *CachingGitCloner) cloneToCache(ctx context.Context, repoURL, cachePath,
 	return nil
 }
 
-func (c *CachingGitCloner) copyFromCache(cachePath, targetDir string) error {
-	return copyDirContents(cachePath, targetDir)
-}
-
 func sanitizeRepoName(repoURL, branch string) string {
 	key := repoURL
 	if branch != "" {
@@ -153,48 +150,6 @@ func sanitizeRepoName(repoURL, branch string) string {
 	// Use repo basename for readability + hash prefix for uniqueness
 	base := strings.TrimSuffix(filepath.Base(repoURL), ".git")
 	return fmt.Sprintf("%s-%x", base, h[:8])
-}
-
-func copyDirContents(src, dst string) error {
-	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		relPath, err := filepath.Rel(src, path)
-		if err != nil {
-			return err
-		}
-		if relPath == "." {
-			return nil
-		}
-		dstPath := filepath.Join(dst, relPath)
-		if info.IsDir() {
-			return os.MkdirAll(dstPath, info.Mode())
-		}
-		return copyFile(path, dstPath)
-	})
-}
-
-func copyFile(src, dst string) error {
-	srcInfo, err := os.Stat(src)
-	if err != nil {
-		return err
-	}
-
-	srcFile, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer srcFile.Close()
-
-	dstFile, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, srcInfo.Mode())
-	if err != nil {
-		return err
-	}
-	defer dstFile.Close()
-
-	_, err = dstFile.ReadFrom(srcFile)
-	return err
 }
 
 type Monitor struct {
@@ -312,19 +267,15 @@ func (m *Monitor) GetRecentCommits(ctx context.Context) ([]RepoResult, error) {
 func (m *Monitor) getRepoCommits(ctx context.Context, repo config.Repo) ([]Commit, error) {
 	var gitRepo *git.Repository
 	var err error
-	var tempDir string
 
 	// Determine if this is a remote or local repository
 	if repo.URL != "" {
-		// Remote repository - use git binary for cloning (supports credential helpers)
-		gitRepo, tempDir, err = m.cloneRemoteRepo(ctx, repo.URL, repo.Branch)
+		var cleanup func()
+		gitRepo, cleanup, err = m.cloneRemoteRepo(ctx, repo.URL, repo.Branch)
 		if err != nil {
 			return nil, fmt.Errorf("failed to clone remote repository: %w", err)
 		}
-		// Clean up temp directory when done reading commits
-		if tempDir != "" {
-			defer os.RemoveAll(tempDir)
-		}
+		defer cleanup()
 	} else if repo.Path != "" {
 		// Local repository - check if path exists
 		if _, err := os.Stat(repo.Path); os.IsNotExist(err) {
@@ -414,26 +365,20 @@ func getOneLineCommitMessage(message string) string {
 	return strings.TrimSpace(message)
 }
 
-// cloneRemoteRepo performs a shallow clone using the configured GitCloner
-func (m *Monitor) cloneRemoteRepo(ctx context.Context, repoURL string, branch string) (*git.Repository, string, error) {
-	tempDir, err := os.MkdirTemp("", "repomon-*")
+// cloneRemoteRepo obtains a git repository for a remote URL using the configured GitCloner.
+func (m *Monitor) cloneRemoteRepo(ctx context.Context, repoURL, branch string) (*git.Repository, func(), error) {
+	repoPath, cleanup, err := m.cloner.Clone(ctx, repoURL, branch)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to create temp directory: %w", err)
-	}
-
-	err = m.cloner.Clone(ctx, repoURL, tempDir, branch)
-	if err != nil {
-		os.RemoveAll(tempDir)
 		slog.Debug("Failed to clone remote repository", "error", err, "url", repoURL, "branch", branch)
-		return nil, "", fmt.Errorf("git clone failed: %w", err)
+		return nil, func() {}, fmt.Errorf("git clone failed: %w", err)
 	}
 
-	gitRepo, err := git.PlainOpen(tempDir)
+	gitRepo, err := git.PlainOpen(repoPath)
 	if err != nil {
-		os.RemoveAll(tempDir)
-		return nil, "", fmt.Errorf("failed to open cloned repository: %w", err)
+		cleanup()
+		return nil, func() {}, fmt.Errorf("failed to open cloned repository: %w", err)
 	}
 
-	slog.Debug("Successfully cloned remote repository", "url", repoURL, "tempDir", tempDir)
-	return gitRepo, tempDir, nil
+	slog.Debug("Successfully opened remote repository", "url", repoURL, "path", repoPath)
+	return gitRepo, cleanup, nil
 }
