@@ -415,8 +415,18 @@ func TestExecuteAdd(t *testing.T) {
 			expectedError: "repository argument is required",
 		},
 		{
-			name:    "Config load failure",
+			name:    "Config not found creates new config",
 			loadErr: fmt.Errorf("config file not found"),
+			args:    []string{"/path/to/repo"},
+			rootOpts: &rootOptions{
+				configFile: "missing.yaml",
+				group:      "default",
+			},
+			expectedOutput: "Added '/path/to/repo' to group 'default'",
+		},
+		{
+			name:    "Other config load failure returns error",
+			loadErr: fmt.Errorf("permission denied"),
 			args:    []string{"/path/to/repo"},
 			rootOpts: &rootOptions{
 				configFile: "missing.yaml",

@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 
+	"github.com/plars/repomon/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -33,8 +35,16 @@ func (r *repomonRunner) executeAdd(args []string, rootOpts *rootOptions) error {
 
 	cfg, err := r.loadConfig(rootOpts.configFile)
 	if err != nil {
-		logger.Error("Failed to load configuration", "error", err)
-		return fmt.Errorf("failed to load configuration: %w", err)
+		if !strings.Contains(err.Error(), "not found") {
+			logger.Error("Failed to load configuration", "error", err)
+			return fmt.Errorf("failed to load configuration: %w", err)
+		}
+		cfg = &config.Config{
+			Days:   1,
+			Cache:  &config.CacheConfig{Enabled: false},
+			Groups: make(map[string]*config.Group),
+		}
+		logger.Info("No configuration file found, creating new one")
 	}
 
 	requestedGroupName := rootOpts.group
