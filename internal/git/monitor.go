@@ -54,7 +54,13 @@ func (c *RealGitCloner) Clone(ctx context.Context, repoURL, branch string) (stri
 	}
 	cleanup := func() { os.RemoveAll(tempDir) }
 
-	args := []string{"clone", repoURL, tempDir, "--depth", "100", "--no-tags"}
+	args := []string{
+		"-c", "filter.lfs.smudge=",
+		"-c", "filter.lfs.clean=",
+		"-c", "filter.lfs.process=",
+		"-c", "filter.lfs.required=false",
+		"clone", repoURL, tempDir, "--depth", "100", "--no-tags",
+	}
 	if branch != "" {
 		args = append(args, "--branch", branch)
 	}
@@ -105,6 +111,7 @@ func (c *CachingGitCloner) Clone(ctx context.Context, repoURL, branch string) (s
 func (c *CachingGitCloner) fetchUpdates(ctx context.Context, repoPath, branch string) error {
 	cmd := exec.CommandContext(ctx, "git", "fetch", "origin")
 	cmd.Dir = repoPath
+	cmd.Env = append(os.Environ(), "GIT_LFS_SKIP_SMUDGE=1")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("git fetch failed: %w: %s", err, output)
@@ -117,6 +124,7 @@ func (c *CachingGitCloner) fetchUpdates(ctx context.Context, repoPath, branch st
 	}
 	cmd = exec.CommandContext(ctx, "git", "reset", "--hard", resetRef)
 	cmd.Dir = repoPath
+	cmd.Env = append(os.Environ(), "GIT_LFS_SKIP_SMUDGE=1")
 	output, err = cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("git reset failed: %w: %s", err, output)
@@ -129,7 +137,13 @@ func (c *CachingGitCloner) cloneToCache(ctx context.Context, repoURL, cachePath,
 		return fmt.Errorf("failed to create cache directory: %w", err)
 	}
 
-	args := []string{"clone", repoURL, cachePath, "--depth", "100", "--no-tags"}
+	args := []string{
+		"-c", "filter.lfs.smudge=",
+		"-c", "filter.lfs.clean=",
+		"-c", "filter.lfs.process=",
+		"-c", "filter.lfs.required=false",
+		"clone", repoURL, cachePath, "--depth", "100", "--no-tags",
+	}
 	if branch != "" {
 		args = append(args, "--branch", branch)
 	}
