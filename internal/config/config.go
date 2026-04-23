@@ -322,7 +322,7 @@ func Load(configFile string) (*Config, error) {
 		cfg.Days = 1
 	}
 	if cfg.Cache == nil {
-		cfg.Cache = &CacheConfig{Enabled: false}
+		cfg.Cache = &CacheConfig{Enabled: true}
 	}
 	if cfg.Groups == nil {
 		cfg.Groups = make(map[string]*Group)
