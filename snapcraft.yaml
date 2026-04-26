@@ -1,0 +1,31 @@
+name: repomon
+base: core24
+version: git
+summary: Monitor git repositories and report recent commits
+description: |
+  Repomon monitors configured git repositories and generates a report
+  showing the most recent commits to each repository in an easy-to-read format.
+
+  Supports both local and remote repositories, with configurable groups
+  and caching for improved performance.
+grade: stable
+confinement: strict
+
+apps:
+  repomon:
+    command: bin/repomon
+    plugs:
+      - home
+      - removable-media
+      - network
+
+parts:
+  repomon:
+    plugin: go
+    source: .
+    source-type: git
+    build-snaps:
+      - go/1.22/stable
+    override-build: |
+      go build -ldflags="-X=github.com/plars/repomon/internal/config.Version=$SNAPCRAFT_PROJECT_VERSION" -o repomon ./cmd/repomon
+      cp repomon $SNAPCRAFT_PART_INSTALL/bin/repomon
