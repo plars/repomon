@@ -27,6 +27,9 @@ jobs:
       - name: Verify dependencies
         run: go mod download
 
+      - name: Run govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest && govulncheck ./...
+
       - name: Check formatting
         run: |
           if [ -n "$(gofmt -l .)" ]; then
