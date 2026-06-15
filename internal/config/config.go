@@ -293,24 +293,32 @@ func (c *Config) Save(configFile string) error {
 	return nil
 }
 
+// DefaultConfigPath returns the default config file path, respecting $XDG_CONFIG_HOME.
+func DefaultConfigPath() (string, error) {
+	configHome := os.Getenv("XDG_CONFIG_HOME")
+	if configHome == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("failed to get home directory: %w", err)
+		}
+		configHome = filepath.Join(home, ".config")
+	}
+	return filepath.Join(configHome, "repomon", "config.yaml"), nil
+}
+
 // Load the configuration from the specified YAML file path
 func Load(configFile string) (*Config, error) {
 	if configFile == "" {
-		home, err := os.UserHomeDir()
+		var err error
+		configFile, err = DefaultConfigPath()
 		if err != nil {
-			return nil, fmt.Errorf("failed to get home directory: %w", err)
+			return nil, err
 		}
-		configFile = filepath.Join(home, ".config", "repomon", "config.yaml")
-	}
-
-	// Check if config file exists
-	if _, err := os.Stat(configFile); os.IsNotExist(err) {
-		return nil, fmt.Errorf("config file not found: %s", configFile)
 	}
 
 	data, err := os.ReadFile(configFile)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read config file: %w", err)
+		return nil, fmt.Errorf("failed to read config file %s: %w", configFile, err)
 	}
 
 	var cfg Config

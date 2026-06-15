@@ -2,11 +2,9 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"log/slog"
 	"os"
-	"path/filepath"
 
 	"github.com/plars/repomon/internal/config"
 	"github.com/plars/repomon/internal/git"
@@ -60,15 +58,11 @@ func newDefaultRunner(out, err io.Writer, stdin io.Reader) *repomonRunner {
 }
 
 // resolveConfigPath returns the full path to the config file.
-// If configFile is empty, it returns the default path (~/.config/repomon/config.yaml).
-// Environment variables in the path are expanded.
+// If configFile is empty, delegates to config.DefaultConfigPath (respects $XDG_CONFIG_HOME).
+// Environment variables in explicit paths are expanded.
 func resolveConfigPath(configFile string) (string, error) {
 	if configFile == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", fmt.Errorf("failed to get home directory: %w", err)
-		}
-		return filepath.Join(home, ".config", "repomon", "config.yaml"), nil
+		return config.DefaultConfigPath()
 	}
 	return os.ExpandEnv(configFile), nil
 }
