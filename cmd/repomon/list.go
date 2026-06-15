@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -27,6 +28,9 @@ func (r *repomonRunner) executeList(args []string, rootOpts *rootOptions) error 
 
 	cfg, err := r.loadConfig(rootOpts.configFile)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("no config file found — run 'repomon add <repo>' to get started")
+		}
 		logger.Error("Failed to load configuration", "error", err)
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}

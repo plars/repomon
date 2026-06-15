@@ -1,10 +1,10 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
-	"strings"
 
 	"github.com/plars/repomon/internal/config"
 	"github.com/spf13/cobra"
@@ -35,7 +35,7 @@ func (r *repomonRunner) executeAdd(args []string, rootOpts *rootOptions) error {
 
 	cfg, err := r.loadConfig(rootOpts.configFile)
 	if err != nil {
-		if !strings.Contains(err.Error(), "not found") {
+		if !errors.Is(err, os.ErrNotExist) {
 			logger.Error("Failed to load configuration", "error", err)
 			return fmt.Errorf("failed to load configuration: %w", err)
 		}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -42,6 +43,9 @@ func (r *repomonRunner) executeRm(args []string, rootOpts *rootOptions, rmOpts *
 
 	cfg, err := r.loadConfig(rootOpts.configFile)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("no config file found — run 'repomon add <repo>' to get started")
+		}
 		logger.Error("Failed to load configuration", "error", err)
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}

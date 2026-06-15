@@ -416,7 +416,7 @@ func TestExecuteAdd(t *testing.T) {
 		},
 		{
 			name:    "Config not found creates new config",
-			loadErr: fmt.Errorf("config file not found"),
+			loadErr: fmt.Errorf("failed to read config file: %w", os.ErrNotExist),
 			args:    []string{"/path/to/repo"},
 			rootOpts: &rootOptions{
 				configFile: "missing.yaml",

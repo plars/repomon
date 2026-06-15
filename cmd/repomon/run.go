@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 )
 
 // runOptions holds the flags specific to the run command.
@@ -21,6 +23,9 @@ func (r *repomonRunner) executeRun(ctx context.Context, args []string, runOpts *
 
 	cfg, err := r.loadConfig(rootOpts.configFile)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("no config file found — run 'repomon add <repo>' to get started")
+		}
 		logger.Error("Failed to load configuration", "error", err)
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
