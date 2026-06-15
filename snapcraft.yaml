@@ -14,6 +14,8 @@ confinement: strict
 apps:
   repomon:
     command: bin/repomon
+    environment:
+      XDG_CONFIG_HOME: $SNAP_USER_COMMON/.config
     plugs:
       - home
       - removable-media
